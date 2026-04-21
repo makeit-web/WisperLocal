@@ -1,0 +1,52 @@
+# --- macOS ---
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon
+
+# --- Xcode ---
+build/
+DerivedData/
+*.xcuserstate
+*.xcscheme
+xcuserdata/
+*.moved-aside
+*.xccheckout
+*.xcscmblueprint
+
+# --- Swift Package Manager ---
+.build/
+Packages/
+Package.resolved
+.swiftpm/
+
+# --- whisper.cpp / models ---
+# Models are NEVER committed. Download scripts only.
+models/
+whisper.cpp/
+*.bin
+*.mlmodelc/
+*.mlmodel
+
+# --- Audio test samples (may contain personal speech) ---
+test-audio/
+*.wav
+*.m4a
+*.mp3
+*.flac
+*.caf
+
+# --- Logs ---
+*.log
+logs/
+
+# --- Editor / IDE ---
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# --- Env / secrets (shouldn't exist, but just in case) ---
+.env
+.env.*
+secrets.json
