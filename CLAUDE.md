@@ -4,12 +4,13 @@
 
 ## Project Overview
 
-Local macOS dictation app for MacBook Air M1. Global hotkey → speak → transcribed text is injected into whatever app the cursor is in (Slack, Mail, browser, etc.). Works 100% offline after setup. Primary language: **Croatian**. Secondary: English.
+Local macOS dictation app for MacBook Air M1 (8 GB) and Mac mini M4 (16 GB). Global hotkey → speak → transcribed text is injected into whatever app the cursor is in (Slack, Mail, browser, etc.). Works 100% offline after setup. Primary language: **Croatian**. Secondary: English.
 
 - Personal use only — not a product
 - Built with whisper.cpp + Core ML on Apple Silicon
 - Swift + SwiftUI native macOS (menu bar app, no dock icon)
-- Whisper large-v3 (fallback: medium) for HR accuracy
+- Whisper models chosen **per hardware tier** after the Phase 1 benchmark (ADR 003): large-v3 / large-v3-turbo, with a Croatian fine-tune candidate
+- **Authoritative build plan:** `docs/specs/2026-07-02-wisperlocal-master-plan.md` (approved 2026-07-02) — governance in `docs/skills/guardians/README.md`, Swift rules in `docs/specs/swift-quality-profile.md`
 
 ## Role Definition
 
@@ -40,11 +41,11 @@ Local macOS dictation app for MacBook Air M1. Global hotkey → speak → transc
 ### 3. Zero Security & Privacy Shortcuts
 - No hardcoded secrets or API keys. Ever. (There shouldn't be any — everything is local.)
 - Microphone audio never leaves the machine. No telemetry. No network calls beyond initial model download.
-- Microphone and Accessibility permissions are requested correctly via Info.plist — never worked around.
+- Microphone permission via `Info.plist` usage string; Accessibility & Input-Monitoring via runtime TCC (`AXIsProcessTrusted` / `IOHIDCheckAccess`) — all requested correctly, never worked around.
 - No `// TODO: add permission check later` — do it now or don't build it yet.
 
 ### 4. Test Everything
-- Unit tests (XCTest) for every logic module: audio capture, model loader, transcription pipeline, text injection, hotkey handler.
+- Unit tests (**Swift Testing**) for every logic module: audio capture, model loader, transcription pipeline, text injection, hotkey handler. (XCTest only for latency/performance `measure` regression — ADR 002.)
 - Integration tests for full pipelines (mic → whisper → text).
 - Manual verification checklist for UI behavior (menu bar, hotkey, permission dialogs) — documented per phase.
 - No phase marked complete without passing tests.
@@ -68,7 +69,7 @@ Local macOS dictation app for MacBook Air M1. Global hotkey → speak → transc
 - Descriptive names over abbreviations. `audioCaptureSession` not `audCapSes`.
 
 ### Swift
-- Swift 5.9+ with strict concurrency checks enabled where the toolchain supports it.
+- Swift 5.9+ (Swift 6 language mode, `SWIFT_STRICT_CONCURRENCY=complete`). Full rule set: `docs/specs/swift-quality-profile.md`.
 - No force-unwraps (`!`) outside test code. Use `guard let` / `if let`.
 - No `as!` casting. Use conditional cast + error handling.
 - Explicit return types on all non-trivial functions.
@@ -95,11 +96,11 @@ Local macOS dictation app for MacBook Air M1. Global hotkey → speak → transc
 
 - **Every technical decision** is presented to the user with options + recommendation. User approves before proceeding.
 - **Every decision is logged** in `docs/decisions/` with date, options considered, chosen option, and reasoning. File naming: `YYYY-MM-DD-NNN-short-slug.md`.
-- **Three-pass code review** for every phase's implementation:
+- **Risk-scaled code review** (ADR 004 / master plan §2.5): **full three-pass for Phases 3–5** (app / injection); **Claude Quality Reviewer + one Codex pass for Phases 1–2** (CLI / benchmark — zero attack surface). The passes:
   1. **Claude Quality Reviewer** (via `roles/quality-reviewer.md`) — correctness, maintainability, security, Apple platform conventions
   2. **Codex standard review** (`/codex:review`) — independent AI review
   3. **Codex adversarial review** (`/codex:adversarial-review`) — attack surface, edge cases, concurrency, permissions
-- All three passes must complete before a phase is marked done. Findings presented to user — user decides which to fix.
+- The required passes for the phase must complete before it is marked done. Findings presented to user — user decides which to fix.
 
 ## Tech Stack
 
@@ -108,13 +109,13 @@ Local macOS dictation app for MacBook Air M1. Global hotkey → speak → transc
 | Language | Swift 5.9+ |
 | UI | SwiftUI (+ AppKit where needed) |
 | Transcription | whisper.cpp with Core ML acceleration |
-| Model | Whisper large-v3 (fallback: medium) |
+| Model | Per hardware tier (ADR 003): large-v3 / large-v3-turbo (+ HR fine-tune candidate) |
 | Audio capture | AVAudioEngine |
 | Global hotkey | Carbon / HotKey Swift wrapper (TBD in spec) |
 | Text injection | Accessibility API (AXUIElement) + CGEventPost (TBD in spec) |
 | Menu bar | NSStatusItem |
 | Build | Xcode project (no SPM-only for app target; SPM for deps) |
-| Testing | XCTest (unit + integration), manual checklist for UI |
+| Testing | Swift Testing (unit + integration); XCTest for latency `measure`; manual checklist for UI |
 | Logging | OSLog + file log in `~/Library/Logs/WisperLocal/` |
 
 All "TBD in spec" items are decided in their respective phase spec, logged in `docs/decisions/`.
@@ -129,11 +130,13 @@ WisperLocal/
 │   ├── decisions/             <- Decision log (one file per decision)
 │   ├── specs/                 <- One spec per phase (approved before coding)
 │   ├── research/              <- whisper.cpp benchmarks, API investigations
+│   ├── audits/                <- review / audit records
 │   └── skills/
 │       ├── README.md          <- Skills registry
+│       ├── guardians/         <- guardian definitions
 │       └── roles/             <- 4 role definitions
 ├── src/                       <- Swift source (created in Phase 3)
-├── tests/                     <- XCTest targets (created with src/)
+├── tests/                     <- Swift Testing + XCTest targets (created with src/)
 └── models/                    <- Whisper models (gitignored; download scripts only)
 ```
 

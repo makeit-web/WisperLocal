@@ -1,9 +1,19 @@
 # Phase 1 — Open Questions (awaiting user answers)
 
 **Created:** 2026-04-21
-**Status:** 🟡 Awaiting user answers
-**Blocks:** `docs/specs/phase-1-whisper-setup.md` (cannot be finalized until these are resolved)
+**Status:** ✅ **RESOLVED (2026-07-02)** — all answers incorporated into `docs/specs/2026-07-02-wisperlocal-master-plan.md` §7 and ADRs `003`/`005`. This doc is kept for history; the questions below are answered in the summary.
 **Author:** Claude (CTO)
+
+### Resolution summary
+| Q | Topic | Resolution | Recorded in |
+|---|-------|-----------|-------------|
+| Q1 🚨 | Microphone | Air = built-in; Mac mini = AirPods (no hardware invest yet — "prove it works first"); benchmark on the actual daily-driver mic | master-plan §1; `[[hardware_targets]]` |
+| Q2 | WER method | Report **both CER and WER** with pinned Croatian-aware normalization + subjective score | ADR-003; master-plan §5 P1 |
+| Q3 🚨 | Exit criteria | **WER ≤ 12%** + subjective ≥ 4/5 + beat Apple dictation + **hard-stop** (stretch ≤ 8%) | ADR-003; master-plan §7 |
+| Q4 | initial_prompt | **A/B tested** in Phase 1 (research: may *degrade* non-EN); domain vocab list still pending from user | master-plan §5 P1, §7 |
+| Q5 | Signing | **Stable self-signed, non-sandboxed** from Phase 3 (not ad-hoc) | ADR-005 |
+| Q6 | VAD | Silero as a **silence-trim layer** (Phase 2), not mandatory auto-stop | ADR-003; master-plan §5 P2 |
+| Q7 🚨 | Mac mini | **M4, 16 GB, 512 GB — arrived** | master-plan §1; `[[hardware_targets]]` |
 
 ---
 
@@ -247,8 +257,8 @@ Say "challenge D<N>" if any of these is wrong for you.
 3. Claude writes `docs/specs/phase-1-plan.md` (concrete implementation steps).
 4. You approve the plan.
 5. Claude starts building: whisper.cpp build, model download scripts, benchmark harness, Common Voice download.
-6. This week's Phase 1a runs on the Air (3 models: large-v3 q5_0, q4_0, medium q5_0).
-7. Mac mini arrives → Phase 1b runs (adds q8_0, cross-machine comparison).
+6. Phase 1 benchmarks the per-tier matrix (ADR-003): `large-v3-turbo q8_0/q5_0`, full `large-v3 q8_0/f16`, the `GoranS` HR fine-tune, `medium` fallback — CER & WER + RTF + peak RAM on both machines.
+7. Both machines available now (Air M1 8 GB + Mac mini M4 16 GB) → cross-machine comparison in a single pass.
 8. Final decision record written → model and config locked.
 9. Phase 2 spec opens.
 

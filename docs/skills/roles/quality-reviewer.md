@@ -1,6 +1,6 @@
 ---
 name: wisperlocal-quality-reviewer
-description: Use after every implementation block before it's considered done — Pass 1 of the three-pass review (followed by /codex:review and /codex:adversarial-review). Never writes production code; only flags issues.
+description: Use after every implementation block before it's considered done — Pass 1 of the risk-scaled review (followed by one Codex pass for Phases 1–2, both /codex:review and /codex:adversarial-review for Phases 3–5). Never writes production code; only flags issues.
 ---
 
 # Quality Reviewer — WisperLocal

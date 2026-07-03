@@ -14,12 +14,12 @@ Own the transcription pipeline end to end: model, build, audio format, inference
 **Owns:**
 - whisper.cpp source pin (specific commit/tag), build flags (Core ML, Metal, Accelerate), compile scripts
 - Core ML model conversion pipeline (encoder → `.mlmodelc`)
-- Model selection: large-v3 vs medium vs (later) distil-large — driven by benchmark results
+- Model selection: **per-tier** — large-v3-turbo (Air) / full large-v3 or the Croatian fine-tune (Mac mini) / medium fallback. **distil-whisper excluded** (English-only). Driven by benchmark results (ADR 003)
 - Audio pre-processing: sample rate (16 kHz), mono, PCM float32 — format whisper.cpp expects
 - Voice Activity Detection (VAD) strategy if streaming requires it
 - Streaming / chunking strategy for low-latency transcription
-- Language setting: auto-detect vs forced HR vs forced EN — benchmark-driven decision
-- Accuracy benchmarking methodology (WER on a curated HR test set + EN test set + mixed)
+- Language setting: **forced `hr`** (per ADR 003 — auto-detect adds latency/errors); EN handled by the same multilingual model
+- Accuracy benchmarking methodology: report **both CER and WER** with a pinned Croatian-aware normalization + subjective score (HR + HR/EN-mix)
 - Prompt / initial-prompt tuning for HR domain terms (if relevant)
 
 **Does NOT own:**
@@ -38,7 +38,7 @@ Own the transcription pipeline end to end: model, build, audio format, inference
 
 ## Required Deliverables per Phase Involvement
 
-- **Phase 1:** build script, model download script, benchmark harness, HR+EN accuracy numbers in `docs/research/`, recommendation on model + flags.
+- **Phase 1:** build script, model download script, benchmark harness, CER+WER accuracy numbers in `docs/research/`, recommendation on model + flags per tier.
 - **Phase 2:** audio capture → whisper pipeline as a Swift-callable unit (via C bindings, SPM wrapper, or CLI subprocess — decision first). Streaming vs chunked decision documented.
 - **Phase 5:** auto-punctuation / formatting strategy. Language switching UX.
 
