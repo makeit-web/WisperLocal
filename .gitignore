@@ -24,6 +24,8 @@ Package.resolved
 # Models are NEVER committed. Download scripts only.
 models/
 whisper.cpp/
+# whisper.cpp headers staged into the CWhisper module by scripts/setup-whisper.sh
+src/CWhisper/include/*.h
 *.bin
 *.mlmodelc/
 *.mlmodel
