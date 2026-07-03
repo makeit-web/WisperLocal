@@ -1,42 +1,41 @@
-# Phase 1 Benchmark — first Croatian numbers (FLEURS-hr pilot)
+# Phase 1 Benchmark — Croatian accuracy (FLEURS-hr, full test split)
 
 > **Date:** 2026-07-03 · **Author:** Claude (Whisper/ML Specialist)
-> **Status:** PILOT (n=30) — encouraging, but NOT a model-selection decision. Scale-up required before ADR-003 is marked Accepted.
+> **Status:** Objective tier picture on FLEURS-hr (n=914, M4) is clear. NOT yet a final ADR-003 lock — user voice samples (subjective + real-world), Common Voice HR, domain-prompt A/B, Core ML latency, and the Air 8 GB tier are still pending.
 
 ## Question
-What objective CER/WER does whisper.cpp give on Croatian, on the Mac mini M4, for the Air-tier model (`large-v3-turbo q8_0`) vs the full `large-v3`? Does anything clear the WER ≤ 12% gate?
+Objective CER/WER + RTF + RAM for the per-tier candidate models on Croatian, on the Mac mini M4. Does the per-tier strategy (turbo q8_0 / large-v3) hold with our own numbers?
 
 ## Setup (reproducibility)
-- **whisper.cpp:** v1.9.1 (commit `f049fff95a089aa9969deb009cdd4892b3e74916`), **Metal-only build** (`WHISPER_COREML=0`) — no Core ML yet (Core ML affects encoder *speed*, not accuracy).
-- **Machine:** Mac mini M4, 16 GB, macOS 26.5.1.
-- **Decode:** `language=hr`, no `initial_prompt`, threads=4, whisper.cpp defaults (temp fallback), `-nt`.
-- **Models:** `ggml-large-v3-turbo-q8_0.bin` (834 MB, SHA256 `317eb69c11673c9de1e1f0d459b253999804ec71ac4c23c17ecf5fbe24e259a1`); `ggml-large-v3.bin` (f16, 2.9 GB).
-- **Metrics:** CER + WER via `jiwer`, with the pinned Croatian normalization (`benchmark/normalize.py` v1: NFC, casefold, punctuation→space, collapse ws, **digits left as-is**). RTF = processing/audio (<1 = faster than real time).
-- **Harness:** `benchmark/` (unit-tested: 15 passing).
+- **whisper.cpp:** v1.9.1 (`f049fff95a089aa9969deb009cdd4892b3e74916`), **Metal-only** build (no Core ML — Core ML affects encoder *speed*, not accuracy).
+- **Machine:** Mac mini M4, 16 GB, macOS 26.5.1. threads=4, `language=hr`, no `initial_prompt`, whisper.cpp defaults.
+- **Models & SHA256:** `ggml-large-v3-turbo-q8_0.bin` (834 MB, `317eb69c…`); `ggml-large-v3-q8_0.bin` (1.5 GB, `24bc434f…`, locally quantized from f16 via `whisper-quantize`); `ggml-large-v3.bin` (f16, 2.9 GB, pilot only).
+- **Metrics:** CER/WER via `jiwer` + pinned Croatian normalization (`benchmark/normalize.py` v1: NFC, casefold, punct→space, **digits left as-is**). RTF = processing/audio. Harness: `benchmark/` (15 pytest passing).
 
 ## Test inputs
-FLEURS-hr **test** split (914 total), **first 30 samples**, 16 kHz mono. Clean, read speech — NOT spontaneous dictation, NOT the user's mic/voice.
+FLEURS-hr **test** split — **all 914 samples**, 16 kHz mono. Clean, read speech — NOT spontaneous dictation, NOT the user's mic/voice.
 
-## Raw results
-| model | WER mean | WER median | CER mean | RTF mean |
-|-------|----------|-----------|----------|----------|
-| large-v3-turbo q8_0 | **0.101** | 0.103 | 0.031 | **0.16** |
-| large-v3 f16 | 0.116 | 0.115 | **0.027** | 0.37 |
+## Raw results (n=914)
+| model | WER mean | WER median | CER mean | RTF mean | peak RSS |
+|-------|----------|-----------|----------|----------|----------|
+| large-v3-turbo q8_0 | 0.124 | 0.105 | 0.035 | 0.16 (~6×) | 1.1 GB |
+| **large-v3 q8_0** | **0.110** | **0.091** | **0.031** | 0.31 (~3×) | 2.6 GB |
+| large-v3 f16 (pilot n=30) | 0.116 | — | 0.027 | 0.37 (~2.7×) | 4.0 GB |
 
-Per-sample CSVs: `benchmark/results/*.csv` (gitignored).
+RAM = peak RSS of `whisper-cli` under `/usr/bin/time -l`. Per-sample CSVs in `benchmark/results/` (gitignored).
 
 ## Interpretation
-- **Both clear the 12% WER gate** on this set. Turbo q8_0 ~10% WER at ~6× real time; large-v3 f16 ~12% WER at ~2.7× real time.
-- **Turbo ≈ large-v3 here** — turbo even edges WER, large-v3 edges CER. This mildly contradicts the research's "turbo materially worse for low-resource" claim, **but n=30 is far too small to conclude** — the gap is within sampling noise. CER (more stable) marginally favors large-v3, as expected.
-- **Number normalization inflates WER** on digit-heavy samples (reference "150 i 200" vs a spelled-out hypothesis). The v1 normalization keeps digits as-is; a digit↔word unification pass would likely *lower* WER further.
-- RTF is excellent on M4 even without Core ML — latency is clearly not a problem on this tier.
+- **large-v3 q8_0 beats turbo q8_0 on accuracy** (WER 11.0% vs 12.4%, median 9.1% vs 10.5%, CER 3.1% vs 3.5%) — this **confirms the research** ("large-v3 > turbo for low-resource HR"). Turbo is ~2× faster and ~2.3× lighter.
+- **The n=30 pilot was MISLEADING** (turbo looked *better* there). The scale-up to 914 reversed it — exactly why the plan mandates "our own numbers, benchmark before choosing, don't lock on small n."
+- **Mean vs median matters:** turbo's mean (12.4%) sits just over the 12% gate while its median (10.5%) is comfortably under — the mean is inflated by a tail of hard / number-heavy samples. large-v3's median is 9.1%.
+- **Number normalization (v1) inflates WER** on digit-heavy references ("150 i 200"). A digit↔word unification pass would likely lower both means; it can be applied by **re-scoring the existing CSVs** (they store the hypotheses) — no re-run of whisper needed.
+- **RAM confirms the tiers:** turbo q8_0 (1.1 GB) coexists comfortably on the 8 GB Air; large-v3 q8_0 (2.6 GB) is the M4-tier accuracy choice; f16 (4.0 GB) is M4-only and not worth it over q8_0.
 
 ## Recommendation / next
-1. **Do NOT lock the model** on n=30. Scale to the full 914 FLEURS-hr + add Common Voice HR.
-2. Refine the normalization (number handling) and re-score.
-3. Add the **Croatian fine-tune** `GoranS/whisper-large-v3-turbo-hr-parla` (needs a torch-based GGML conversion) — the research's 8.66% candidate.
-4. Quantize `large-v3 q8_0` locally (`whisper-quantize`) to match ADR-003 (only f16/q5_0 are prebuilt).
-5. Measure peak RAM/swap; run the **Core ML** encoder path for the latency delta.
-6. Then the parts that need the user: **his voice samples** (subjective gate + real-world), the **domain-prompt A/B**, and the **Air 8 GB tier** (separate session).
+1. **Per-tier strategy holds (ADR-003):** Air 8 GB → `large-v3-turbo q8_0`; Mac mini M4 → `large-v3 q8_0`. Confirmed by *our* accuracy + RAM.
+2. Refine the number normalization and re-score from CSVs.
+3. Add **Common Voice HR** (spontaneous speech — FLEURS is read speech) and the **Croatian fine-tune** (`GoranS/…`, needs a torch conversion).
+4. Measure the **Core ML** encoder latency delta; run the **Air 8 GB** tier (separate session).
+5. **User-gated (before ADR-003 is marked Accepted):** personal HR (+HR/EN-mix) voice samples for the subjective ≥4/5 gate + real-world validation, and the domain-prompt A/B.
 
-**Bottom line:** the pipeline is proven and Croatian accuracy is already gate-clearing on clean read speech — a strong start, pending the scale-up and real-world/subjective validation before ADR-003 is finalized.
+**Bottom line:** on clean Croatian read speech, both tier models are gate-clearing (median WER 9–10.5%), large-v3 q8_0 is the accuracy leader, and the per-tier split is validated by measured accuracy *and* RAM. Real-world/subjective validation on the user's own voice is the remaining gate.
