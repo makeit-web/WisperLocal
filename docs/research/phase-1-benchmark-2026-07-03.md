@@ -28,12 +28,12 @@ RAM = peak RSS of `whisper-cli` under `/usr/bin/time -l`. Per-sample CSVs in `be
 - **large-v3 q8_0 beats turbo q8_0 on accuracy** (WER 11.0% vs 12.4%, median 9.1% vs 10.5%, CER 3.1% vs 3.5%) — this **confirms the research** ("large-v3 > turbo for low-resource HR"). Turbo is ~2× faster and ~2.3× lighter.
 - **The n=30 pilot was MISLEADING** (turbo looked *better* there). The scale-up to 914 reversed it — exactly why the plan mandates "our own numbers, benchmark before choosing, don't lock on small n."
 - **Mean vs median matters:** turbo's mean (12.4%) sits just over the 12% gate while its median (10.5%) is comfortably under — the mean is inflated by a tail of hard / number-heavy samples. large-v3's median is 9.1%.
-- **Number normalization (v1) inflates WER** on digit-heavy references ("150 i 200"). A digit↔word unification pass would likely lower both means; it can be applied by **re-scoring the existing CSVs** (they store the hypotheses) — no re-run of whisper needed.
+- **Number normalization (v1) inflates WER** on digit-heavy references ("150 i 200"). A digit↔word unification would likely lower both means, but **`num2words` has no Croatian support** (`NotImplementedError`), so this needs a small custom HR converter — deferred as disproportionate for a marginal mean gain. The **median** is the robust metric here (it discounts the number-heavy tail); any future refinement can re-score the stored CSV hypotheses without re-running whisper.
 - **RAM confirms the tiers:** turbo q8_0 (1.1 GB) coexists comfortably on the 8 GB Air; large-v3 q8_0 (2.6 GB) is the M4-tier accuracy choice; f16 (4.0 GB) is M4-only and not worth it over q8_0.
 
 ## Recommendation / next
 1. **Per-tier strategy holds (ADR-003):** Air 8 GB → `large-v3-turbo q8_0`; Mac mini M4 → `large-v3 q8_0`. Confirmed by *our* accuracy + RAM.
-2. Refine the number normalization and re-score from CSVs.
+2. Refine number handling with a small custom Croatian converter (`num2words` lacks `hr`) and re-score from the stored CSVs.
 3. Add **Common Voice HR** (spontaneous speech — FLEURS is read speech) and the **Croatian fine-tune** (`GoranS/…`, needs a torch conversion).
 4. Measure the **Core ML** encoder latency delta; run the **Air 8 GB** tier (separate session).
 5. **User-gated (before ADR-003 is marked Accepted):** personal HR (+HR/EN-mix) voice samples for the subjective ≥4/5 gate + real-world validation, and the domain-prompt A/B.
