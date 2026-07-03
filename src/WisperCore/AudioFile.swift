@@ -44,6 +44,24 @@ public enum AudioFile {
         return try resampleTo16kMono(input, from: sourceFormat)
     }
 
+    /// Resample an already-mono Float32 signal to 16 kHz.
+    public static func resampleMono(_ input: [Float], sourceRate: Double) throws -> [Float] {
+        if sourceRate == 16_000 || input.isEmpty { return input }
+        guard let format = AVAudioFormat(
+            commonFormat: .pcmFormatFloat32, sampleRate: sourceRate, channels: 1, interleaved: false
+        ), let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(input.count)) else {
+            throw AudioError.bufferAllocFailed
+        }
+        buffer.frameLength = AVAudioFrameCount(input.count)
+        guard let channel = buffer.floatChannelData else { throw AudioError.noChannelData }
+        input.withUnsafeBufferPointer { source in
+            if let base = source.baseAddress {
+                channel[0].update(from: base, count: input.count)
+            }
+        }
+        return try resampleTo16kMono(buffer, from: format)
+    }
+
     private static func resampleTo16kMono(
         _ input: AVAudioPCMBuffer, from sourceFormat: AVAudioFormat
     ) throws -> [Float] {
