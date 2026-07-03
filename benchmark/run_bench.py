@@ -71,6 +71,7 @@ def main():
     ap.add_argument("--threads", type=int, default=4)
     ap.add_argument("--prompt", default="")
     ap.add_argument("--limit", type=int, default=0)
+    ap.add_argument("--quiet", action="store_true", help="suppress per-sample lines")
     args = ap.parse_args()
 
     with open(args.manifest) as f:
@@ -99,7 +100,10 @@ def main():
             "hyp": hyp,
         }
         rows.append(row)
-        print(f"[{i+1}/{len(items)}] wer={row['wer']:.3f} cer={row['cer']:.3f} rtf={row['rtf']:.2f}")
+        if not args.quiet:
+            print(f"[{i+1}/{len(items)}] wer={row['wer']:.3f} cer={row['cer']:.3f} rtf={row['rtf']:.2f}")
+        elif (i + 1) % 100 == 0:
+            print(f"[{i+1}/{len(items)}] running...", flush=True)
 
     with open(args.out, "w", newline="") as f:
         w = csv.DictWriter(
