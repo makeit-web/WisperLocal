@@ -46,6 +46,19 @@ logs/
 *.swp
 *.swo
 
+# --- Python (benchmark harness) ---
+.venv/
+venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ipynb_checkpoints/
+# HuggingFace / datasets cache (large; never commit)
+datasets-cache/
+# Benchmark datasets + raw CSV outputs (summaries go to docs/research/)
+benchmark/data/
+benchmark/results/
+
 # --- Env / secrets (shouldn't exist, but just in case) ---
 .env
 .env.*
