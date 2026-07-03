@@ -31,6 +31,13 @@ let package = Package(
             path: "src/wisper-cli",
             linkerSettings: whisperLink
         ),
+        .executableTarget(
+            name: "WisperApp",
+            dependencies: ["WisperCore"],
+            path: "src/WisperApp",
+            exclude: ["Info.plist"],
+            linkerSettings: whisperLink
+        ),
         .testTarget(
             name: "WisperCoreTests",
             dependencies: ["WisperCore"],

@@ -38,6 +38,9 @@ test-audio/
 *.flac
 *.caf
 
+# --- Built app bundle (produced by scripts/make-app.sh) ---
+WisperLocal.app/
+
 # --- Logs ---
 *.log
 logs/
