@@ -20,7 +20,7 @@ struct WisperCLI {
         }
 
         var modelPath = "models/ggml-large-v3-turbo-q8_0.bin"
-        var language = "hr"
+        var language = "auto"
         var seconds: Double?
         var index = 2
         while index < args.count {

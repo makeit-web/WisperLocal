@@ -14,7 +14,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let capture = AudioCapture()
     private var context: WhisperContext?
     private var isRecording = false
-    private let language = "hr"
+    private let language = "auto"  // detect the spoken language and transcribe in it
 
     static func main() {
         let app = NSApplication.shared
@@ -27,6 +27,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         setupStatusItem()
         loadModel()
+        _ = TextInjector.requestTrustPrompt()  // Accessibility, for text injection
         AVCaptureDevice.requestAccess(for: .audio) { [weak self] granted in
             Task { @MainActor in
                 guard let self else { return }
@@ -91,7 +92,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 guard let ctx else { self.setIcon("⚠️"); return }
                 let text = try await ctx.transcribe(samples: samples, language: lang)
                 self.deliver(text)
-                self.setIcon("🎤")
             } catch {
                 self.setIcon("⚠️")
                 NSLog("WisperLocal: transcription failed: \(error)")
@@ -99,12 +99,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    /// Phase 3 interim delivery: clipboard. Phase 4 replaces this with
-    /// Accessibility injection into the focused app (no pasteboard).
+    /// Inject the transcription into the focused app. If Accessibility isn't
+    /// granted yet, keep the text on the clipboard so it isn't lost and prompt.
     private func deliver(_ text: String) {
-        guard !text.isEmpty else { return }
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(text, forType: .string)
+        guard !text.isEmpty else { setIcon("🎤"); return }
+        switch TextInjector.inject(text) {
+        case .injected:
+            setIcon("🎤")
+        case .secureField:
+            setIcon("🔒")  // refuse to type into a password field
+        case .notTrusted:
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(text, forType: .string)
+            setIcon("🔐")
+            _ = TextInjector.requestTrustPrompt()
+        }
     }
 
     private func setIcon(_ symbol: String) {
