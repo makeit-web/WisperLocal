@@ -11,10 +11,11 @@ import WisperCore
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem?
     private var hotKey: HotKey?
+    private var doubleTap: DoubleTapCtrl?
     private let capture = AudioCapture()
     private var context: WhisperContext?
     private var isRecording = false
-    private let language = "auto"  // detect the spoken language and transcribe in it
+    private var language = "hr"  // default Croatian (best accuracy); switch via the menu
 
     static func main() {
         let app = NSApplication.shared
@@ -41,7 +42,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         item.button?.title = "🎤"
         let menu = NSMenu()
-        menu.addItem(withTitle: "WisperLocal — ⌃⌥D to dictate", action: nil, keyEquivalent: "")
+        menu.addItem(withTitle: "WisperLocal — double-tap Ctrl (or ⌃⌥D)", action: nil, keyEquivalent: "")
+        menu.addItem(.separator())
+
+        let languageItem = NSMenuItem(title: "Language", action: nil, keyEquivalent: "")
+        let languageMenu = NSMenu()
+        for (title, code) in [("Croatian", "hr"), ("English", "en"), ("Auto-detect", "auto")] {
+            let entry = NSMenuItem(title: title, action: #selector(setLanguage(_:)), keyEquivalent: "")
+            entry.representedObject = code
+            entry.state = code == language ? .on : .off
+            languageMenu.addItem(entry)
+        }
+        languageItem.submenu = languageMenu
+        menu.addItem(languageItem)
+
+        menu.addItem(
+            withTitle: "Open Accessibility Settings…",
+            action: #selector(openAccessibilitySettings), keyEquivalent: ""
+        )
         menu.addItem(.separator())
         menu.addItem(withTitle: "Quit", action: #selector(quit), keyEquivalent: "q")
         item.menu = menu
@@ -58,6 +76,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func installHotKey() {
+        // Primary trigger: double-tap Control. Secondary: ⌃⌥D.
+        doubleTap = DoubleTapCtrl { [weak self] in
+            Task { @MainActor in self?.toggle() }
+        }
         hotKey = HotKey(
             keyCode: UInt32(kVK_ANSI_D),
             modifiers: UInt32(controlKey | optionKey)
@@ -118,6 +140,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func setIcon(_ symbol: String) {
         statusItem?.button?.title = symbol
+    }
+
+    @objc private func setLanguage(_ sender: NSMenuItem) {
+        guard let code = sender.representedObject as? String else { return }
+        language = code
+        sender.menu?.items.forEach { $0.state = ($0.representedObject as? String) == code ? .on : .off }
+    }
+
+    @objc private func openAccessibilitySettings() {
+        if let url = URL(
+            string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"
+        ) {
+            NSWorkspace.shared.open(url)
+        }
     }
 
     @objc private func quit() {

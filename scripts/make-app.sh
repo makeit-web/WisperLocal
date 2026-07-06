@@ -25,8 +25,16 @@ for m in ggml-large-v3-q8_0.bin ggml-large-v3-turbo-q8_0.bin; do
   fi
 done
 
-echo "Ad-hoc signing ..."
-codesign --force --deep --sign - "$APP" >/dev/null 2>&1 || echo "  (codesign skipped)"
+# Prefer the stable self-signed identity (scripts/make-signing-cert.sh) so macOS
+# remembers the Accessibility grant across rebuilds; fall back to ad-hoc.
+if security find-identity -v -p codesigning 2>/dev/null | grep -q "WisperLocal"; then
+  echo "Signing with stable identity 'WisperLocal' ..."
+  codesign --force --deep --sign "WisperLocal" "$APP" >/dev/null 2>&1 \
+    && echo "  (stable-signed)" || echo "  (stable sign failed; app left unsigned)"
+else
+  echo "Ad-hoc signing (run scripts/make-signing-cert.sh once for stable grants) ..."
+  codesign --force --deep --sign - "$APP" >/dev/null 2>&1 || echo "  (codesign skipped)"
+fi
 
 echo "Done: $APP"
 echo "Launch it, then grant Microphone permission when prompted. Hotkey: Control+Option+D."
