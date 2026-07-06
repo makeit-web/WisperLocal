@@ -33,20 +33,23 @@ enum TextInjector {
 
         let source = CGEventSource(stateID: .combinedSessionState)
         let units = Array(text.utf16)
-        post(units, source: source, keyDown: true)
-        post(units, source: source, keyDown: false)
-        return .injected
-    }
-
-    private static func post(_ units: [UInt16], source: CGEventSource?, keyDown: Bool) {
-        guard let event = CGEvent(keyboardEventSource: source, virtualKey: 0, keyDown: keyDown) else {
-            return
+        guard let down = CGEvent(keyboardEventSource: source, virtualKey: 0, keyDown: true),
+              let up = CGEvent(keyboardEventSource: source, virtualKey: 0, keyDown: false) else {
+            return .injected
         }
+        // Clear real modifier state (e.g. Control logically held from the double-tap
+        // trigger) so the text is not interpreted as keyboard shortcuts.
+        down.flags = []
+        up.flags = []
+        // Unicode payload goes on key-down only; key-up is just the matching release
+        // (setting it on both can double-insert in some apps).
         units.withUnsafeBufferPointer { buffer in
             if let base = buffer.baseAddress {
-                event.keyboardSetUnicodeString(stringLength: buffer.count, unicodeString: base)
+                down.keyboardSetUnicodeString(stringLength: buffer.count, unicodeString: base)
             }
         }
-        event.post(tap: .cghidEventTap)
+        down.post(tap: .cghidEventTap)
+        up.post(tap: .cghidEventTap)
+        return .injected
     }
 }
