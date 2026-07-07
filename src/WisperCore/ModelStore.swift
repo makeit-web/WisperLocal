@@ -20,9 +20,13 @@ public enum ModelStore {
         return "models"
     }
 
-    /// Full path to the RAM-selected model, falling back to the turbo model.
+    /// Full path to the model to load. Prefers the Croatian fine-tune if
+    /// installed (more accurate for HR, turbo-sized), else the RAM-selected
+    /// model, else the turbo fallback.
     public static func defaultModelPath() -> String {
         let dir = modelsDirectory()
+        let fineTune = "\(dir)/ggml-hr-parla-q8_0.bin"
+        if FileManager.default.fileExists(atPath: fineTune) { return fineTune }
         let primary = "\(dir)/\(defaultModelName())"
         if FileManager.default.fileExists(atPath: primary) { return primary }
         return "\(dir)/ggml-large-v3-turbo-q8_0.bin"

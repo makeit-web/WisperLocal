@@ -5,7 +5,8 @@
 set -e
 REPO="makeit-web/WisperLocal"
 APPZIP="https://github.com/$REPO/releases/latest/download/WisperLocal.app.zip"
-MODEL_URL="https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo-q8_0.bin"
+MODEL_NAME="ggml-hr-parla-q8_0.bin"   # Croatian fine-tune (more accurate for HR)
+MODEL_URL="https://github.com/$REPO/releases/latest/download/$MODEL_NAME"
 
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
 
@@ -15,11 +16,11 @@ rm -rf /Applications/WisperLocal.app
 ditto -x -k "$TMP/WisperLocal.app.zip" /Applications/
 xattr -dr com.apple.quarantine /Applications/WisperLocal.app 2>/dev/null || true
 
-echo "Downloading the model (~834 MB, one time) ..."
+echo "Downloading the Croatian model (~834 MB, one time) ..."
 MDIR="$HOME/Library/Application Support/WisperLocal/models"
 mkdir -p "$MDIR"
-if [ ! -f "$MDIR/ggml-large-v3-turbo-q8_0.bin" ]; then
-  curl -fL "$MODEL_URL" -o "$MDIR/ggml-large-v3-turbo-q8_0.bin"
+if [ ! -f "$MDIR/$MODEL_NAME" ]; then
+  curl -fL "$MODEL_URL" -o "$MDIR/$MODEL_NAME"
 fi
 
 cat <<'DONE'
