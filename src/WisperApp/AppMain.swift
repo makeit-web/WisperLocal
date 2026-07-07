@@ -12,6 +12,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem?
     private var hotKey: HotKey?
     private var doubleTap: DoubleTapCtrl?
+    private let splash = SplashWindow()
     private let capture = AudioCapture()
     private var context: WhisperContext?
     private var isRecording = false
@@ -27,6 +28,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         setupStatusItem()
+        splash.show(for: 3)
         loadModel()
         _ = TextInjector.requestTrustPrompt()  // Accessibility, for text injection
         AVCaptureDevice.requestAccess(for: .audio) { [weak self] granted in
@@ -61,6 +63,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             action: #selector(openAccessibilitySettings), keyEquivalent: ""
         )
         menu.addItem(.separator())
+        let version = (Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String).map { " · v\($0)" } ?? ""
+        let credit = NSMenuItem(title: "Built by Ante Kujundžić\(version)", action: nil, keyEquivalent: "")
+        credit.isEnabled = false
+        menu.addItem(credit)
         menu.addItem(withTitle: "Quit", action: #selector(quit), keyEquivalent: "q")
         item.menu = menu
         statusItem = item

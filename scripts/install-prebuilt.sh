@@ -6,7 +6,7 @@ set -e
 REPO="makeit-web/WisperLocal"
 APPZIP="https://github.com/$REPO/releases/latest/download/WisperLocal.app.zip"
 MODEL_NAME="ggml-hr-parla-q8_0.bin"   # Croatian fine-tune (more accurate for HR)
-MODEL_URL="https://github.com/$REPO/releases/latest/download/$MODEL_NAME"
+MODEL_URL="https://github.com/$REPO/releases/download/v0.1.1/$MODEL_NAME"   # pinned (model lives on v0.1.1)
 
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
 

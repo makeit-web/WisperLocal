@@ -14,6 +14,7 @@ rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp .build/release/WisperApp "$APP/Contents/MacOS/WisperLocal"
 cp src/WisperApp/Info.plist "$APP/Contents/Info.plist"
+cp src/WisperApp/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
 
 echo "Provisioning models into Application Support ..."
 MODELS_DIR="$HOME/Library/Application Support/WisperLocal/models"
