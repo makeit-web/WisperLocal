@@ -10,7 +10,7 @@ echo "== WisperLocal install =="
 
 # 1. Prerequisites (the two interactive ones must be installed by hand).
 if ! xcode-select -p >/dev/null 2>&1; then
-  echo "!! Xcode Command Line Tools required. Run: xcode-select --install  (then re-run this)."
+  echo "!! Xcode Command Line Tools required (the ~2 GB CLT, NOT full Xcode). Run: xcode-select --install  (then re-run this)."
   exit 1
 fi
 if ! command -v brew >/dev/null 2>&1; then

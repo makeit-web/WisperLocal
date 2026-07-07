@@ -5,7 +5,7 @@ Local, 100% offline macOS dictation for Apple Silicon. Global hotkey → speak (
 ## Install on a new Mac (one command)
 
 **Prerequisites** (install these first if missing):
-- **Xcode Command Line Tools** — `xcode-select --install`
+- **Xcode Command Line Tools** — `xcode-select --install` (this is the **~2 GB** developer tools, **NOT** the 15 GB Xcode app — you do not need full Xcode)
 - **Homebrew** — https://brew.sh
 - **GitHub access** to `makeit-web/WisperLocal` (ssh key or `gh auth login`)
 
