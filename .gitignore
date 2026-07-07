@@ -68,3 +68,6 @@ benchmark/results/
 .env
 .env.*
 secrets.json
+
+# --- Private working docs (Claude session state; machine/user-specific — repo is shared) ---
+docs/SESSION-HANDOFF.md

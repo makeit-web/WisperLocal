@@ -62,6 +62,7 @@ bash scripts/make-app.sh         # build WisperLocal.app locally
 ```
 
 ## More
-- Full state, architecture, and next steps: **`docs/SESSION-HANDOFF.md`**
+- Build, architecture, signing & release process: **`docs/DEVELOPMENT.md`**
+- User guides: `docs/UPUTE-HR.md` (hrvatski) / `docs/GUIDE-EN.md` (English)
 - Approved plan: `docs/specs/2026-07-02-wisperlocal-master-plan.md`
 - Benchmark: `docs/research/phase-1-benchmark-2026-07-03.md`
