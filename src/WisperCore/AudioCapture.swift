@@ -28,7 +28,10 @@ public final class AudioCapture: @unchecked Sendable {
         guard status == .authorized else {
             throw AudioError.readFailed("microphone permission not granted (status \(status.rawValue))")
         }
-        lock.lock(); native.removeAll(keepingCapacity: true); running = true; lock.unlock()
+        lock.lock()
+        if running { lock.unlock(); throw AudioError.readFailed("already recording") }
+        native.removeAll(keepingCapacity: true); running = true
+        lock.unlock()
 
         let input = engine.inputNode
         let format = input.outputFormat(forBus: 0)
@@ -67,7 +70,11 @@ public final class AudioCapture: @unchecked Sendable {
         guard let channel = buffer.floatChannelData else { return }
         let slice = UnsafeBufferPointer(start: channel[0], count: Int(buffer.frameLength))
         lock.lock()
-        native.append(contentsOf: slice)
+        // Bound memory: stop accumulating past ~10 min so a forgotten recording
+        // can't grow unbounded next to the ~834 MB model on an 8 GB machine.
+        if native.count < Int(sourceRate * 600) {
+            native.append(contentsOf: slice)
+        }
         lock.unlock()
     }
 }

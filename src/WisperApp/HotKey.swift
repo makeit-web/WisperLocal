@@ -1,5 +1,6 @@
 import Carbon.HIToolbox
 import Foundation
+import WisperCore
 
 /// A global hotkey registered via Carbon. `onFire` runs on the main run loop
 /// (Carbon delivers hot-key events there). `self` is passed to the C handler via
@@ -20,13 +21,21 @@ final class HotKey {
             Unmanaged<HotKey>.fromOpaque(userData).takeUnretainedValue().onFire()
             return noErr
         }
-        InstallEventHandler(
+        let installStatus = InstallEventHandler(
             GetApplicationEventTarget(), callback, 1, &spec,
             Unmanaged.passUnretained(self).toOpaque(), &handler
         )
+        if installStatus != noErr {
+            Log.error("hotkey handler install failed", code: Int(installStatus))
+        }
 
         let id = EventHotKeyID(signature: OSType(0x5753_5052), id: 1)  // 'WSPR'
-        RegisterEventHotKey(keyCode, modifiers, id, GetApplicationEventTarget(), 0, &ref)
+        let registerStatus = RegisterEventHotKey(
+            keyCode, modifiers, id, GetApplicationEventTarget(), 0, &ref
+        )
+        if registerStatus != noErr {
+            Log.error("hotkey registration failed — may conflict with another app", code: Int(registerStatus))
+        }
     }
 
     deinit {

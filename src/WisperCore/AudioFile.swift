@@ -83,7 +83,9 @@ public enum AudioFile {
         var conversionError: NSError?
         let outcome = converter.convert(to: output, error: &conversionError) { _, statusPointer in
             if feed.supplied {
-                statusPointer.pointee = .noDataNow
+                // No more input is coming — flush the converter's filter tail
+                // (.noDataNow would drop the last few ms / a trailing phoneme).
+                statusPointer.pointee = .endOfStream
                 return nil
             }
             feed.supplied = true

@@ -44,19 +44,20 @@ CLI for quick transcription checks:
 
 macOS ties the Accessibility/Microphone TCC grants to the app's code-signing identity. Ad-hoc signing produces a new identity every build, which **resets the grants on every update**. Therefore:
 
-- `scripts/make-signing-cert.sh` creates a **stable self-signed identity** in a dedicated keychain (`~/Library/Keychains/wisper-signing.keychain-db`), so signing is non-interactive.
-- `scripts/make-app.sh` signs with that identity automatically (falls back to ad-hoc if the keychain isn't set up).
-- **Every release must be signed with the same identity**, or users' grants reset. The identity lives only on the release build machine — building releases on a *different* machine creates a new cert, which costs every user a one-time re-grant.
-- Self-signed ≠ notarized: Gatekeeper shows "damaged" on other Macs if the app is double-clicked from a browser download. `scripts/install-prebuilt.sh` handles this by removing the quarantine attribute — users must install via the script.
+- `scripts/make-signing-cert.sh` creates a **stable self-signed identity** in a dedicated keychain. The keychain password is **random and stored only in a local gitignored file (`~/.wisperlocal-signing-pw`) — never in the repo**; the key is imported for `codesign` use only (no `-A`).
+- `scripts/make-app.sh` reads that password and signs automatically. If stable signing isn't available it **refuses to build a release** (a silent ad-hoc/unsigned build would reset every user's grants) — pass `--dev` for a local ad-hoc build. It also runs a binary **egress scan** (`nm`/`otool`) and fails if any networking symbol is present.
+- **Every release must be signed with the same identity**, or users' grants reset. The identity + its password file live only on the release build machine — building releases on a *different* machine creates a new cert, which costs every user a one-time re-grant.
+- Self-signed ≠ notarized: Gatekeeper shows "damaged" on other Macs if the app is double-clicked from a browser download. `scripts/install-prebuilt.sh` handles this by removing the quarantine attribute (after verifying the download's SHA256) — users must install via the script.
 
 ## Release process
 
 1. Bump `CFBundleShortVersionString` in `src/WisperApp/Info.plist`.
-2. `bash scripts/make-app.sh` (builds + stable-signs).
+2. `bash scripts/make-app.sh` (builds, stable-signs, runs the egress scan; fails loudly if it can't stable-sign).
 3. `ditto -c -k --keepParent WisperLocal.app /tmp/WisperLocal.app.zip`
-4. `gh release create vX.Y.Z /tmp/WisperLocal.app.zip --repo makeit-web/WisperLocal --title ... --notes ...`
+4. Update the pinned `APP_VERSION` + `APP_SHA256` (from `shasum -a 256 /tmp/WisperLocal.app.zip`) in `scripts/install-prebuilt.sh`, and commit.
+5. `gh release create vX.Y.Z /tmp/WisperLocal.app.zip --repo makeit-web/WisperLocal --title ... --notes ...`
 
-Note: `install-prebuilt.sh` pins the model asset URL to the release that carries it (currently v0.1.1's `ggml-hr-parla-q8_0.bin`) — a new model means updating that pin.
+Note: `install-prebuilt.sh` pins both the app version (with its SHA256) and the model asset URL to the release that carries it (currently v0.1.1's `ggml-hr-parla-q8_0.bin`, with its committed SHA256) — a new model means updating that pin + checksum.
 
 ## Testing
 

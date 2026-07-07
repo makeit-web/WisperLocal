@@ -1,6 +1,7 @@
 import AppKit
 import AVFoundation
 import Carbon.HIToolbox
+import UserNotifications
 import WisperCore
 
 /// WisperLocal menu-bar app. Global hotkey (⌃⌥D) toggles push-to-talk dictation:
@@ -18,6 +19,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var context: WhisperContext?
     private var isRecording = false
     private var language = "hr"  // default Croatian (best accuracy); switch via the menu
+    private var lastTranscript = ""  // last delivered text, for explicit "Copy Last Dictation"
 
     static func main() {
         let app = NSApplication.shared
@@ -28,10 +30,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        Log.event("app launched")
         setupStatusItem()
         splash.show(for: 3)
         loadModel()
         _ = TextInjector.requestTrustPrompt()  // Accessibility, for text injection
+        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in }
         AVCaptureDevice.requestAccess(for: .audio) { [weak self] granted in
             Task { @MainActor in
                 guard let self else { return }
@@ -64,6 +68,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             withTitle: "Open Accessibility Settings…",
             action: #selector(openAccessibilitySettings), keyEquivalent: ""
         )
+        menu.addItem(
+            withTitle: "Copy Last Dictation",
+            action: #selector(copyLastDictation), keyEquivalent: ""
+        )
 
         let loginItem = NSMenuItem(
             title: "Launch at Login", action: #selector(toggleLoginItem(_:)), keyEquivalent: ""
@@ -85,9 +93,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func loadModel() {
         do {
             context = try WhisperContext(modelPath: ModelStore.defaultModelPath())
+            Log.event("model loaded")
         } catch {
             setIcon("⚠️")
-            NSLog("WisperLocal: model load failed: \(error)")
+            Log.error("model load failed", error)
         }
     }
 
@@ -115,7 +124,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             setIcon("🔴")
         } catch {
             setIcon("🚫")
-            NSLog("WisperLocal: capture start failed: \(error)")
+            Log.error("capture start failed", error)
         }
     }
 
@@ -124,35 +133,52 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         setIcon("⏳")
         let ctx = context
         let lang = language
+        let cap = capture
         Task { @MainActor in
             do {
-                let samples = try self.capture.stop()
-                guard let ctx else { self.setIcon("⚠️"); return }
+                // Resample off the main actor so long recordings don't stall the UI.
+                let samples = try await Task.detached(priority: .userInitiated) {
+                    try cap.stop()
+                }.value
+                // Ignore accidental near-empty recordings (< ~0.5 s) instead of a scary ⚠️.
+                guard samples.count >= 8_000 else { self.setIcon("🎤"); return }
+                guard let ctx else { self.setIcon("⚠️"); Log.error("no model loaded"); return }
                 let text = try await ctx.transcribe(samples: samples, language: lang)
                 self.deliver(text)
             } catch {
                 self.setIcon("⚠️")
-                NSLog("WisperLocal: transcription failed: \(error)")
+                Log.error("transcription failed", error)
             }
         }
     }
 
-    /// Inject the transcription into the focused app. If Accessibility isn't
-    /// granted yet, keep the text on the clipboard so it isn't lost and prompt.
+    /// Type the transcription into the focused app, off the main thread (chunked
+    /// injection takes a few ms). Nothing is auto-copied to the clipboard — the
+    /// transcript never leaves the machine implicitly (ADR 007); if injection is
+    /// blocked the user copies it explicitly via the menu.
     private func deliver(_ rawText: String) {
         // Strip Whisper's trailing period/ellipsis before typing (ADR 006) so
         // dictated URLs/paths aren't broken. Faithful transcript stays in WisperCore.
         let text = TextCleanup.forInjection(rawText)
         guard !text.isEmpty else { setIcon("🎤"); return }
-        switch TextInjector.inject(text) {
+        lastTranscript = text
+        Task.detached(priority: .userInitiated) { [weak self] in
+            let result = TextInjector.inject(text)
+            await MainActor.run { self?.handleInjection(result) }
+        }
+    }
+
+    private func handleInjection(_ result: InjectionResult) {
+        switch result {
         case .injected:
             setIcon("🎤")
         case .secureField:
-            setIcon("🔒")  // refuse to type into a password field
+            setIcon("🔒")  // refused to type into a password field
+            notify("Password field", "Not typing into a secure field, for your safety.")
         case .notTrusted:
-            NSPasteboard.general.clearContents()
-            NSPasteboard.general.setString(text, forType: .string)
             setIcon("🔐")
+            notify("Accessibility needed",
+                   "Enable WisperLocal in Accessibility, then dictate again. Menu 🎤 → “Copy Last Dictation” to paste it.")
             _ = TextInjector.requestTrustPrompt()
         }
     }
@@ -175,11 +201,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
     }
 
+    /// Copy the last dictation to the clipboard — an explicit user action, so the
+    /// transcript only leaves the app when the user asks (recovery when injection
+    /// was blocked, e.g. Accessibility not yet granted). See ADR 007.
+    @objc private func copyLastDictation() {
+        guard !lastTranscript.isEmpty else { return }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(lastTranscript, forType: .string)
+    }
+
+    private func notify(_ title: String, _ body: String) {
+        let content = UNMutableNotificationContent()
+        content.title = title
+        content.body = body
+        let request = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)
+        UNUserNotificationCenter.current().add(request)
+    }
+
     @objc private func toggleLoginItem(_ sender: NSMenuItem) {
         do {
             try LoginItem.toggle()
         } catch {
-            NSLog("WisperLocal: launch-at-login toggle failed: \(error)")
+            Log.error("launch-at-login toggle failed", error)
+            notify("Launch at Login", "Couldn't change the setting — try System Settings → General → Login Items.")
         }
         sender.state = LoginItem.isEnabled ? .on : .off
         if LoginItem.needsApproval { LoginItem.openSystemSettings() }

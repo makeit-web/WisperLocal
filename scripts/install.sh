@@ -26,7 +26,9 @@ bash scripts/setup-whisper.sh
 bash scripts/download-model.sh
 
 # 4. Build WisperLocal.app + provision the model into Application Support.
-bash scripts/make-app.sh
+#    --dev: a from-source build on someone else's Mac has no stable identity, so
+#    ad-hoc signing is expected here (only official RELEASES must be stable-signed).
+bash scripts/make-app.sh --dev
 
 # 5. Install to /Applications.
 echo "Installing to /Applications ..."
