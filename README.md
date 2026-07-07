@@ -46,6 +46,13 @@ bash scripts/make-signing-cert.sh && bash scripts/install.sh
 cd ~/WisperLocal && git pull && bash scripts/install.sh
 ```
 
+## Uninstall
+Removes the app, its models, and its data:
+```bash
+curl -fL https://raw.githubusercontent.com/makeit-web/WisperLocal/main/scripts/uninstall.sh -o /tmp/wl-uninstall.sh && bash /tmp/wl-uninstall.sh
+```
+(The models live in `~/Library/Application Support/WisperLocal/`, separate from the app — dragging the app to Trash does not remove them.)
+
 ## Develop / rebuild
 ```bash
 bash scripts/setup-whisper.sh    # build whisper.cpp static (once)

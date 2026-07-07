@@ -8,7 +8,7 @@ final class SplashWindow {
 
     func show(for seconds: TimeInterval = 3) {
         guard let screen = NSScreen.main else { return }
-        let size = NSSize(width: 400, height: 132)
+        let size = NSSize(width: 448, height: 112)
         let origin = NSPoint(
             x: screen.frame.midX - size.width / 2,
             y: screen.frame.maxY - size.height - 56  // just under the menu bar
@@ -17,6 +17,7 @@ final class SplashWindow {
             contentRect: NSRect(origin: origin, size: size),
             styleMask: .borderless, backing: .buffered, defer: false
         )
+        win.isReleasedWhenClosed = false  // ARC owns it; close() must not also release (would crash)
         win.isOpaque = false
         win.backgroundColor = .clear
         win.level = .floating
@@ -32,16 +33,25 @@ final class SplashWindow {
         blur.layer?.cornerRadius = 18
         blur.layer?.masksToBounds = true
 
-        let iconView = NSImageView(frame: NSRect(x: 22, y: size.height - 70, width: 48, height: 48))
+        // Icon: vertically centred on the left.
+        let iconSize: CGFloat = 54
+        let iconView = NSImageView(frame: NSRect(
+            x: 22, y: (size.height - iconSize) / 2, width: iconSize, height: iconSize))
         iconView.image = NSApp.applicationIconImage
+        iconView.imageScaling = .scaleProportionallyUpOrDown
         blur.addSubview(iconView)
 
+        // Text block: three lines to the right of the icon, evenly spaced and
+        // vertically centred as a group. Line baselines at y = 62 / 40 / 18.
+        let textX: CGFloat = 92
+        let textW = size.width - textX - 20
         let version = (Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String).map { " v\($0)" } ?? ""
-        blur.addSubview(label("WisperLocal\(version)", x: 82, y: size.height - 54, w: 300, size: 19, weight: .bold))
-        blur.addSubview(label("Running — look for 🎤 at the top-right of your screen ↗",
-                              x: 22, y: 46, w: size.width - 44, size: 12.5, weight: .regular))
-        blur.addSubview(label("Built by Ante Kujundžić", x: 22, y: 16, w: size.width - 44,
-                              size: 11.5, weight: .medium, color: .secondaryLabelColor))
+        blur.addSubview(label("WisperLocal\(version)", x: textX, y: 62, w: textW,
+                              size: 18, weight: .bold, color: .labelColor))
+        blur.addSubview(label("Running — 🎤 is at the top-right of your screen ↗", x: textX, y: 39, w: textW,
+                              size: 12.5, weight: .regular, color: .secondaryLabelColor))
+        blur.addSubview(label("Built by Ante Kujundžić", x: textX, y: 17, w: textW,
+                              size: 11.5, weight: .medium, color: .tertiaryLabelColor))
 
         win.contentView = blur
         win.alphaValue = 0
@@ -60,11 +70,12 @@ final class SplashWindow {
     }
 
     private func label(_ text: String, x: CGFloat, y: CGFloat, w: CGFloat,
-                       size: CGFloat, weight: NSFont.Weight, color: NSColor = .labelColor) -> NSTextField {
+                       size: CGFloat, weight: NSFont.Weight, color: NSColor) -> NSTextField {
         let field = NSTextField(labelWithString: text)
-        field.frame = NSRect(x: x, y: y, width: w, height: size + 10)
+        field.frame = NSRect(x: x, y: y, width: w, height: size + 8)
         field.font = .systemFont(ofSize: size, weight: weight)
         field.textColor = color
+        field.lineBreakMode = .byTruncatingTail
         field.isBezeled = false
         field.isEditable = false
         field.drawsBackground = false

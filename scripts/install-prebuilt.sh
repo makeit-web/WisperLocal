@@ -22,6 +22,8 @@ mkdir -p "$MDIR"
 if [ ! -f "$MDIR/$MODEL_NAME" ]; then
   curl -fL "$MODEL_URL" -o "$MDIR/$MODEL_NAME"
 fi
+# The old general model is redundant once the Croatian fine-tune is present.
+[ -f "$MDIR/$MODEL_NAME" ] && rm -f "$MDIR/ggml-large-v3-turbo-q8_0.bin"
 
 cat <<'DONE'
 
