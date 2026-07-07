@@ -8,8 +8,9 @@ import WisperCore
 /// replaces that with Accessibility injection into the focused app.
 @main
 @MainActor
-final class AppDelegate: NSObject, NSApplicationDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var statusItem: NSStatusItem?
+    private var loginMenuItem: NSMenuItem?
     private var hotKey: HotKey?
     private var doubleTap: DoubleTapCtrl?
     private let splash = SplashWindow()
@@ -44,6 +45,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         item.button?.title = "🎤"
         let menu = NSMenu()
+        menu.delegate = self  // refresh the Launch-at-Login checkmark on open
         menu.addItem(withTitle: "WisperLocal — double-tap Ctrl (or ⌃⌥D)", action: nil, keyEquivalent: "")
         menu.addItem(.separator())
 
@@ -62,6 +64,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             withTitle: "Open Accessibility Settings…",
             action: #selector(openAccessibilitySettings), keyEquivalent: ""
         )
+
+        let loginItem = NSMenuItem(
+            title: "Launch at Login", action: #selector(toggleLoginItem(_:)), keyEquivalent: ""
+        )
+        loginItem.state = LoginItem.isEnabled ? .on : .off
+        menu.addItem(loginItem)
+        loginMenuItem = loginItem
+
         menu.addItem(.separator())
         let version = (Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String).map { " · v\($0)" } ?? ""
         let credit = NSMenuItem(title: "Built by Ante Kujundžić\(version)", action: nil, keyEquivalent: "")
@@ -129,7 +139,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// Inject the transcription into the focused app. If Accessibility isn't
     /// granted yet, keep the text on the clipboard so it isn't lost and prompt.
-    private func deliver(_ text: String) {
+    private func deliver(_ rawText: String) {
+        // Strip Whisper's trailing period/ellipsis before typing (ADR 006) so
+        // dictated URLs/paths aren't broken. Faithful transcript stays in WisperCore.
+        let text = TextCleanup.forInjection(rawText)
         guard !text.isEmpty else { setIcon("🎤"); return }
         switch TextInjector.inject(text) {
         case .injected:
@@ -160,6 +173,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         ) {
             NSWorkspace.shared.open(url)
         }
+    }
+
+    @objc private func toggleLoginItem(_ sender: NSMenuItem) {
+        do {
+            try LoginItem.toggle()
+        } catch {
+            NSLog("WisperLocal: launch-at-login toggle failed: \(error)")
+        }
+        sender.state = LoginItem.isEnabled ? .on : .off
+        if LoginItem.needsApproval { LoginItem.openSystemSettings() }
+    }
+
+    // NSMenuDelegate: keep the Launch-at-Login checkmark in sync if the user
+    // changed it from System Settings while the app was running.
+    func menuNeedsUpdate(_ menu: NSMenu) {
+        loginMenuItem?.state = LoginItem.isEnabled ? .on : .off
     }
 
     @objc private func quit() {
