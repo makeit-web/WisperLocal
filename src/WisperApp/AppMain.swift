@@ -19,7 +19,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var context: WhisperContext?
     private var isRecording = false
     private var language = "hr"  // default Croatian (best accuracy); switch via the menu
-    private var lastTranscript = ""  // last delivered text, for explicit "Copy Last Dictation"
 
     static func main() {
         let app = NSApplication.shared
@@ -67,10 +66,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(
             withTitle: "Open Accessibility Settings…",
             action: #selector(openAccessibilitySettings), keyEquivalent: ""
-        )
-        menu.addItem(
-            withTitle: "Copy Last Dictation",
-            action: #selector(copyLastDictation), keyEquivalent: ""
         )
 
         let loginItem = NSMenuItem(
@@ -161,7 +156,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // dictated URLs/paths aren't broken. Faithful transcript stays in WisperCore.
         let text = TextCleanup.forInjection(rawText)
         guard !text.isEmpty else { setIcon("🎤"); return }
-        lastTranscript = text
         Task.detached(priority: .userInitiated) { [weak self] in
             let result = TextInjector.inject(text)
             await MainActor.run { self?.handleInjection(result) }
@@ -177,8 +171,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             notify("Password field", "Not typing into a secure field, for your safety.")
         case .notTrusted:
             setIcon("🔐")
-            notify("Accessibility needed",
-                   "Enable WisperLocal in Accessibility, then dictate again. Menu 🎤 → “Copy Last Dictation” to paste it.")
+            notify("Accessibility needed", "Enable WisperLocal in Accessibility, then dictate again.")
             _ = TextInjector.requestTrustPrompt()
         }
     }
@@ -199,15 +192,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         ) {
             NSWorkspace.shared.open(url)
         }
-    }
-
-    /// Copy the last dictation to the clipboard — an explicit user action, so the
-    /// transcript only leaves the app when the user asks (recovery when injection
-    /// was blocked, e.g. Accessibility not yet granted). See ADR 007.
-    @objc private func copyLastDictation() {
-        guard !lastTranscript.isEmpty else { return }
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(lastTranscript, forType: .string)
     }
 
     private func notify(_ title: String, _ body: String) {
