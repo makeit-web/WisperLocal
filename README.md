@@ -19,6 +19,13 @@ That builds whisper.cpp, downloads the **RAM-appropriate model** (turbo q8_0 on 
 
 *(No ssh key? Use `gh repo clone makeit-web/WisperLocal ~/WisperLocal` instead of the `git clone` part.)*
 
+### No build tools at all (prebuilt app)
+While the repo is public, on the target Mac — needs **no Command Line Tools, no compiler**:
+```bash
+curl -fL https://raw.githubusercontent.com/makeit-web/WisperLocal/main/scripts/install-prebuilt.sh -o /tmp/wl-install.sh && bash /tmp/wl-install.sh
+```
+Downloads the prebuilt `WisperLocal.app` + the model (turbo q8_0) using only built-in macOS tools.
+
 ## First run (grant two permissions)
 1. `open -a WisperLocal` — a 🎤 appears in the menu bar.
 2. **Microphone** — allow when prompted.
