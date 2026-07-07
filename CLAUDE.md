@@ -4,9 +4,9 @@
 
 ## Project Overview
 
-Local macOS dictation app for MacBook Air M1 (8 GB) and Mac mini M4 (16 GB). Global hotkey → speak → transcribed text is injected into whatever app the cursor is in (Slack, Mail, browser, etc.). Works 100% offline after setup. Primary language: **Croatian**. Secondary: English.
+Local macOS dictation app for Apple Silicon Macs. Global hotkey → speak → transcribed text is injected into whatever app the cursor is in (Slack, Mail, browser, etc.). Works 100% offline after setup. Primary language: **Croatian**. Secondary: English.
 
-- Personal use only — not a product
+- Internal tool shared with colleagues — not a commercial product
 - Built with whisper.cpp + Core ML on Apple Silicon
 - Swift + SwiftUI native macOS (menu bar app, no dock icon)
 - Whisper models chosen **per hardware tier** after the Phase 1 benchmark (ADR 003): large-v3 / large-v3-turbo, with a Croatian fine-tune candidate
@@ -56,7 +56,7 @@ Local macOS dictation app for MacBook Air M1 (8 GB) and Mac mini M4 (16 GB). Glo
 - User approves the spec and plan before any code is written.
 
 ### 6. User Experience Is the Success Criterion
-- End user = the user himself. App must feel natural, fast, and invisible.
+- End users = the user and his colleagues. App must feel natural, fast, and invisible.
 - Hotkey latency, transcription start time, and text injection delay all matter.
 - If dictation feels slow or clunky, the project fails — even if the code is "correct."
 

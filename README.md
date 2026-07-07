@@ -1,6 +1,6 @@
 # WisperLocal
 
-Local, 100% offline macOS dictation for Apple Silicon. Global hotkey → speak (Croatian or English) → the text is typed into whatever app your cursor is in. Built with whisper.cpp + Swift. Personal use.
+Local, 100% offline macOS dictation for Apple Silicon. Global hotkey → speak (Croatian or English) → the text is typed into whatever app your cursor is in. Built with whisper.cpp + Swift.
 
 ## Install on a new Mac (one command)
 
