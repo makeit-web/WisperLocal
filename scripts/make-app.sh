@@ -26,12 +26,18 @@ for m in ggml-large-v3-q8_0.bin ggml-large-v3-turbo-q8_0.bin; do
   fi
 done
 
-# Prefer the stable self-signed identity (scripts/make-signing-cert.sh) so macOS
-# remembers the Accessibility grant across rebuilds; fall back to ad-hoc.
-if security find-identity -v -p codesigning 2>/dev/null | grep -q "WisperLocal"; then
-  echo "Signing with stable identity 'WisperLocal' ..."
-  codesign --force --deep --sign "WisperLocal" "$APP" >/dev/null 2>&1 \
-    && echo "  (stable-signed)" || echo "  (stable sign failed; app left unsigned)"
+# Sign with the stable self-signed identity (scripts/make-signing-cert.sh) so
+# macOS keeps the Accessibility grant across updates. Sign by hash from the
+# dedicated keychain (unambiguous); fall back to ad-hoc if it isn't set up.
+SIGN_KC="$HOME/Library/Keychains/wisper-signing.keychain-db"
+SIGN_HASH="$(security find-identity -p codesigning "$SIGN_KC" 2>/dev/null | grep -oE '[0-9A-F]{40}' | head -1)"
+if [ -n "$SIGN_HASH" ]; then
+  security unlock-keychain -p wisper-signing "$SIGN_KC" 2>/dev/null || true
+  if codesign --force --deep --keychain "$SIGN_KC" --sign "$SIGN_HASH" "$APP" >/dev/null 2>&1; then
+    echo "  (stable-signed: WisperLocal)"
+  else
+    codesign --force --deep --sign - "$APP" >/dev/null 2>&1; echo "  (ad-hoc fallback)"
+  fi
 else
   echo "Ad-hoc signing (run scripts/make-signing-cert.sh once for stable grants) ..."
   codesign --force --deep --sign - "$APP" >/dev/null 2>&1 || echo "  (codesign skipped)"
