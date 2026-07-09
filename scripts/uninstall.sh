@@ -7,10 +7,12 @@ pkill -x WisperLocal 2>/dev/null || true
 
 rm -rf "/Applications/WisperLocal.app"
 rm -rf "$HOME/Library/Application Support/WisperLocal"
+rm -rf "$HOME/Library/Logs/WisperLocal"
 
 echo "Removed:"
 echo "  /Applications/WisperLocal.app"
 echo "  ~/Library/Application Support/WisperLocal  (models + data)"
+echo "  ~/Library/Logs/WisperLocal  (local log file)"
 echo ""
 echo "To also revoke the permissions it was granted:"
 echo "  tccutil reset Microphone hr.makeit.wisperlocal"

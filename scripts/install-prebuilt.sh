@@ -17,8 +17,10 @@ MODEL_NAME="ggml-hr-parla-q8_0.bin"
 MODEL_URL="https://github.com/$REPO/releases/download/v0.1.1/$MODEL_NAME"
 MODEL_SHA256="29b73250e1f190bf60fb2394e7b6e76faed417aedbd622bdca6ccb90825be88c"
 
+sha_of() { shasum -a 256 "$1" | awk '{print $1}'; }
+
 verify() {  # <file> <expected-sha256> <label>
-  local got; got="$(shasum -a 256 "$1" | awk '{print $1}')"
+  local got; got="$(sha_of "$1")"
   if [ "$got" != "$2" ]; then
     echo "!! SHA256 mismatch for $3 — refusing to install." >&2
     echo "   expected: $2" >&2
@@ -30,24 +32,55 @@ verify() {  # <file> <expected-sha256> <label>
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
 
 echo "Downloading WisperLocal.app ($APP_VERSION) ..."
-curl -fL "$APP_ZIP" -o "$TMP/WisperLocal.app.zip"
+curl -fL --retry 5 --retry-all-errors "$APP_ZIP" -o "$TMP/WisperLocal.app.zip"
 verify "$TMP/WisperLocal.app.zip" "$APP_SHA256" "WisperLocal.app.zip"
+# Stage first, swap last: the old app is deleted only after the new bundle is
+# verified AND extracted — a failed download/extract must never strand the
+# machine with no app at all.
+mkdir -p "$TMP/stage"
+ditto -x -k "$TMP/WisperLocal.app.zip" "$TMP/stage"
+if [ ! -x "$TMP/stage/WisperLocal.app/Contents/MacOS/WisperLocal" ]; then
+  echo "!! Extracted bundle is malformed — refusing to install." >&2
+  exit 1
+fi
 # Quit any running instance so the app that next launches is the updated one.
 osascript -e 'quit app "WisperLocal"' 2>/dev/null || true
 pkill -x WisperLocal 2>/dev/null || true
-rm -rf /Applications/WisperLocal.app
-ditto -x -k "$TMP/WisperLocal.app.zip" /Applications/
+# Swap with a restorable backup: if the final mv fails (permissions, disk
+# full), put the previous app back instead of leaving the machine with none.
+BACKUP="/Applications/WisperLocal.app.previous.$$"
+[ -d /Applications/WisperLocal.app ] && mv /Applications/WisperLocal.app "$BACKUP"
+if mv "$TMP/stage/WisperLocal.app" /Applications/WisperLocal.app; then
+  rm -rf "$BACKUP"
+else
+  [ -d "$BACKUP" ] && mv "$BACKUP" /Applications/WisperLocal.app
+  echo "!! Install failed while swapping the app — previous version restored." >&2
+  exit 1
+fi
 xattr -dr com.apple.quarantine /Applications/WisperLocal.app 2>/dev/null || true
 
-echo "Downloading the Croatian model (~834 MB, one time) ..."
+echo "Checking the Croatian model (~834 MB, downloaded once) ..."
 MDIR="$HOME/Library/Application Support/WisperLocal/models"
 mkdir -p "$MDIR"
+# Re-verify a pre-existing model too: a partial/corrupt file from an
+# interrupted install must not be trusted forever just because it exists.
+if [ -f "$MDIR/$MODEL_NAME" ]; then
+  if [ "$(sha_of "$MDIR/$MODEL_NAME")" = "$MODEL_SHA256" ]; then
+    echo "  model present (checksum verified)"
+  else
+    echo "  existing model failed verification — re-downloading"
+    rm -f "$MDIR/$MODEL_NAME"
+  fi
+fi
 if [ ! -f "$MDIR/$MODEL_NAME" ]; then
-  curl -fL "$MODEL_URL" -o "$TMP/$MODEL_NAME"
+  # --retry + resume (-C -): a Wi-Fi blip must not restart 834 MB from byte 0.
+  curl -fL --retry 5 --retry-all-errors -C - "$MODEL_URL" -o "$TMP/$MODEL_NAME"
   verify "$TMP/$MODEL_NAME" "$MODEL_SHA256" "$MODEL_NAME"
   mv "$TMP/$MODEL_NAME" "$MDIR/$MODEL_NAME"
 fi
 # The old general model is redundant once the Croatian fine-tune is present.
+# (The app's fallback chain knows this — ModelStore names the fine-tune when
+# nothing else is installed. Keep the two in sync.)
 [ -f "$MDIR/$MODEL_NAME" ] && rm -f "$MDIR/ggml-large-v3-turbo-q8_0.bin"
 
 cat <<'DONE'

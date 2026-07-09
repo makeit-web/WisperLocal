@@ -22,21 +22,44 @@ struct WisperCLI {
         var modelPath = "models/ggml-large-v3-turbo-q8_0.bin"
         var language = "auto"
         var seconds: Double?
-        var index = 2
-        while index < args.count {
-            switch args[index] {
-            case "--model" where index + 1 < args.count: modelPath = args[index + 1]; index += 2
-            case "--lang" where index + 1 < args.count: language = args[index + 1]; index += 2
-            case "--seconds" where index + 1 < args.count: seconds = Double(args[index + 1]); index += 2
-            default: index += 1
+
+        // Options are scanned after the subcommand's positionals, and anything
+        // unrecognized is a hard usage error — a silently ignored typo
+        // (`--land hr`) used to produce misleading results with no signal.
+        func parseOptions(from startIndex: Int) {
+            var index = startIndex
+            while index < args.count {
+                switch args[index] {
+                case "--model" where index + 1 < args.count:
+                    modelPath = args[index + 1]; index += 2
+                case "--lang" where index + 1 < args.count:
+                    language = args[index + 1]; index += 2
+                case "--seconds" where index + 1 < args.count:
+                    // Validate here: the trapping Double→UInt64 conversion in
+                    // record() crashes on negative/huge values otherwise. Upper
+                    // bound = AudioCapture's 600 s cap, so we never record audio
+                    // that would be silently discarded past the cap.
+                    guard let value = Double(args[index + 1]), value > 0, value <= 600 else {
+                        log("error: --seconds expects a number in (0, 600], got '\(args[index + 1])' (capture caps at 10 min)")
+                        printUsage()
+                        exit(2)
+                    }
+                    seconds = value; index += 2
+                default:
+                    log("error: unknown or incomplete option '\(args[index])'")
+                    printUsage()
+                    exit(2)
+                }
             }
         }
 
         switch args[1] {
         case "file":
             guard args.count >= 3 else { printUsage(); exit(2) }
+            parseOptions(from: 3)
             try await transcribeFile(args[2], modelPath: modelPath, language: language)
         case "record":
+            parseOptions(from: 2)
             try await record(modelPath: modelPath, language: language, seconds: seconds)
         default:
             printUsage()
@@ -51,6 +74,9 @@ struct WisperCLI {
     }
 
     static func record(modelPath: String, language: String, seconds: Double?) async throws {
+        // Load the model DURING recording — the 1–3 s load is independent of
+        // capture, so serializing it after stop() just pads the user's wait.
+        let modelTask = Task.detached { try WhisperContext(modelPath: modelPath) }
         let capture = AudioCapture()
         try capture.start()
         if let seconds {
@@ -60,10 +86,11 @@ struct WisperCLI {
             log("recording... press Enter to stop")
             _ = readLine()
         }
-        let samples = try capture.stop()
-        log("captured \(String(format: "%.1f", Double(samples.count) / 16_000))s; transcribing...")
-        let context = try WhisperContext(modelPath: modelPath)
-        print(try await context.transcribe(samples: samples, language: language))
+        let recording = try capture.stop()
+        if recording.truncated { log("warning: recording hit the duration cap; tail was dropped") }
+        log("captured \(String(format: "%.1f", Double(recording.samples.count) / 16_000))s; transcribing...")
+        let context = try await modelTask.value
+        print(try await context.transcribe(samples: recording.samples, language: language))
     }
 
     static func log(_ message: String) {

@@ -26,3 +26,27 @@ def test_empty_hypothesis_is_total_error():
 def test_ref_words_count():
     r = score("jedan dva tri", "jedan dva tri")
     assert r["ref_words"] == 3
+
+
+def test_empty_reference_nonempty_hypothesis_is_full_error():
+    # The hand-written empty-ref branch is the only scorer logic NOT delegated
+    # to jiwer — pin it (QA 2026-07-08).
+    r = score("", "nesto")
+    assert r["wer"] == 1.0
+    assert r["cer"] == 1.0
+    assert r["ref_words"] == 0
+
+
+def test_empty_reference_empty_hypothesis_is_perfect():
+    r = score("", "")
+    assert r["wer"] == 0.0
+    assert r["cer"] == 0.0
+    assert r["ref_words"] == 0
+
+
+def test_punctuation_only_reference_normalizes_to_empty():
+    # normalize() strips punctuation, so a "..." reference hits the empty-ref
+    # branch even though the raw string is non-empty.
+    r = score("!!!", "hm")
+    assert r["wer"] == 1.0
+    assert r["ref_words"] == 0

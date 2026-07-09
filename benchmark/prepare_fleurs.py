@@ -18,17 +18,21 @@ import soundfile as sf
 def load_fleurs(split: str):
     from datasets import Audio, load_dataset
 
-    errors = []
-    for kwargs in ({}, {"trust_remote_code": True}):
-        try:
-            ds = load_dataset("google/fleurs", "hr_hr", split=split, **kwargs)
-            # Do not let datasets decode audio (would require torchcodec).
-            return ds.cast_column("audio", Audio(decode=False))
-        except TypeError:
-            continue  # older/newer signature without trust_remote_code
-        except Exception as e:  # noqa: BLE001
-            errors.append(f"{type(e).__name__}: {e}")
-    raise RuntimeError("FLEURS load failed:\n  " + "\n  ".join(errors))
+    # No trust_remote_code fallback: it would download and EXECUTE the dataset
+    # repo's current loading script from the Hub — unpinned remote code — on any
+    # transient failure of the plain path (QA 2026-07-08). Modern `datasets`
+    # serves google/fleurs from the parquet auto-conversion without a script;
+    # if this load fails, fix the datasets version instead of escalating.
+    try:
+        ds = load_dataset("google/fleurs", "hr_hr", split=split)
+    except Exception as e:  # noqa: BLE001
+        raise RuntimeError(
+            "FLEURS load failed. Do NOT retry with trust_remote_code=True; "
+            "upgrade the 'datasets' package (parquet path) instead.\n  "
+            f"{type(e).__name__}: {e}"
+        ) from e
+    # Do not let datasets decode audio (would require torchcodec).
+    return ds.cast_column("audio", Audio(decode=False))
 
 
 def _read_audio(entry: dict):

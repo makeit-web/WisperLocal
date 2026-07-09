@@ -6,6 +6,16 @@ Usage:
       --label turbo-q8_0-metal [--prompt "..."] [--limit N] [--threads 4]
 
 Pure helpers (rtf, aggregate) are unit-tested; the subprocess call is thin.
+
+Failed whisper-cli invocations (rc != 0, or a per-clip timeout) are recorded in
+the `rc` CSV column, counted as `failures` in the summary, EXCLUDED from the
+wer/cer/rtf means, and make the process exit 1 — a run with harness errors must
+never read as a clean accuracy number (ADR-003 gates model choice on WER).
+
+Known metric caveat: each clip spawns a fresh whisper-cli process, so proc_s /
+rtf include process startup + model load + Metal init — a constant per-clip
+offset that grows with model size. RTFs are comparable within one run, but
+biased when comparing models of different sizes across runs.
 """
 import argparse
 import csv
@@ -37,11 +47,18 @@ def rtf(proc_seconds: float, audio_seconds: float) -> float:
 
 
 def aggregate(rows: list) -> dict:
-    wers = [r["wer"] for r in rows]
-    cers = [r["cer"] for r in rows]
-    rtfs = [r["rtf"] for r in rows if not math.isnan(r["rtf"])]
+    """Means over SUCCESSFUL rows only; failures are counted, not averaged.
+
+    Rows without an `rc` key (historical CSVs) count as successes.
+    """
+    ok = [r for r in rows if r.get("rc", 0) == 0]
+    wers = [r["wer"] for r in ok]
+    cers = [r["cer"] for r in ok]
+    rtfs = [r["rtf"] for r in ok if not math.isnan(r["rtf"])]
     return {
         "n": len(rows),
+        "n_scored": len(ok),
+        "failures": len(rows) - len(ok),
         "wer_mean": statistics.mean(wers) if wers else float("nan"),
         "wer_median": statistics.median(wers) if wers else float("nan"),
         "cer_mean": statistics.mean(cers) if cers else float("nan"),
@@ -49,15 +66,20 @@ def aggregate(rows: list) -> dict:
     }
 
 
-def run_one(binary, model, audio, lang, threads, prompt):
+def run_one(binary, model, audio, lang, threads, prompt, timeout_s=600):
     cmd = [binary, "-m", model, "-f", audio, "-l", lang, "-t", str(threads), "-np", "-nt"]
     if prompt:
         cmd += ["--prompt", prompt]
     t0 = time.monotonic()
-    proc = subprocess.run(cmd, capture_output=True, text=True)
+    try:
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout_s)
+        rc, stdout = proc.returncode, proc.stdout
+    except subprocess.TimeoutExpired:
+        # One hung clip must not stall a 914-file matrix run forever.
+        rc, stdout = -9, ""
     elapsed = time.monotonic() - t0
-    hyp = " ".join(proc.stdout.split()).strip()
-    return hyp, elapsed, proc.returncode
+    hyp = " ".join(stdout.split()).strip()
+    return hyp, elapsed, rc
 
 
 def main():
@@ -97,6 +119,7 @@ def main():
             "rtf": round(rtf(elapsed, dur), 4),
             "audio_s": round(dur, 2),
             "proc_s": round(elapsed, 2),
+            "rc": rc,
             "hyp": hyp,
         }
         rows.append(row)
@@ -107,7 +130,8 @@ def main():
 
     with open(args.out, "w", newline="") as f:
         w = csv.DictWriter(
-            f, fieldnames=["audio", "ref_words", "wer", "cer", "rtf", "audio_s", "proc_s", "hyp"]
+            f,
+            fieldnames=["audio", "ref_words", "wer", "cer", "rtf", "audio_s", "proc_s", "rc", "hyp"],
         )
         w.writeheader()
         w.writerows(rows)
@@ -116,6 +140,9 @@ def main():
     print(f"\n=== SUMMARY [{args.label}] ===")
     print(json.dumps(agg, indent=2))
     print(f"CSV -> {args.out}")
+    if agg["failures"]:
+        print(f"!! {agg['failures']} clip(s) FAILED — accuracy numbers are partial.", file=sys.stderr)
+        sys.exit(1)
 
 
 if __name__ == "__main__":

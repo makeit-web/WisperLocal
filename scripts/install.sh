@@ -30,8 +30,12 @@ bash scripts/download-model.sh
 #    ad-hoc signing is expected here (only official RELEASES must be stable-signed).
 bash scripts/make-app.sh --dev
 
-# 5. Install to /Applications.
+# 5. Install to /Applications. Quit any running instance first — replacing the
+#    bundle under a live process leaves the user silently on the old version
+#    (and can wedge TCC until relaunch). Same block as install-prebuilt.sh.
 echo "Installing to /Applications ..."
+osascript -e 'quit app "WisperLocal"' 2>/dev/null || true
+pkill -x WisperLocal 2>/dev/null || true
 rm -rf /Applications/WisperLocal.app
 cp -R WisperLocal.app /Applications/
 

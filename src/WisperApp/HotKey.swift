@@ -9,6 +9,10 @@ final class HotKey {
     private var ref: EventHotKeyRef?
     private var handler: EventHandlerRef?
     private let onFire: () -> Void
+    /// False when Carbon refused the registration (e.g. another app owns the
+    /// combination) — the caller must surface that, not just the log file:
+    /// a dead trigger with a healthy icon looks like a dead app (QA 2026-07-08).
+    private(set) var isRegistered = false
 
     init(keyCode: UInt32, modifiers: UInt32, onFire: @escaping () -> Void) {
         self.onFire = onFire
@@ -36,6 +40,7 @@ final class HotKey {
         if registerStatus != noErr {
             Log.error("hotkey registration failed — may conflict with another app", code: Int(registerStatus))
         }
+        isRegistered = installStatus == noErr && registerStatus == noErr
     }
 
     deinit {

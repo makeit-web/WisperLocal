@@ -1,42 +1,26 @@
 import AppKit
+import WisperCore
 
-/// Fires `onDoubleTap` when the Control key is pressed twice within `interval`.
-/// Uses a global modifier-flags monitor, which requires Accessibility permission
-/// (the same permission text injection needs). Runs on the main thread.
+/// Fires `onDoubleTap` when the Control key is pressed twice within the
+/// detector's interval. Thin NSEvent adapter over `DoubleTapDetector` (all
+/// timing/chord logic + tests live in WisperCore). Uses a global
+/// modifier-flags monitor, which requires Accessibility permission (the same
+/// permission text injection needs). Runs on the main thread.
 final class DoubleTapCtrl {
     private var monitor: Any?
-    private var lastCtrlDown: TimeInterval = 0
-    private var ctrlHeld = false
-    private let interval: TimeInterval
+    private var detector = DoubleTapDetector()
     private let onDoubleTap: () -> Void
 
-    init(interval: TimeInterval = 0.4, onDoubleTap: @escaping () -> Void) {
-        self.interval = interval
+    init(onDoubleTap: @escaping () -> Void) {
         self.onDoubleTap = onDoubleTap
         monitor = NSEvent.addGlobalMonitorForEvents(matching: .flagsChanged) { [weak self] event in
-            self?.handle(event)
-        }
-    }
-
-    private func handle(_ event: NSEvent) {
-        let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
-        let ctrlNow = flags.contains(.control)
-
-        if ctrlNow, !ctrlHeld {
-            ctrlHeld = true
-            guard flags == .control else {  // Control alone, no other modifiers
-                lastCtrlDown = 0
-                return
+            guard let self else { return }
+            let inputs = DoubleTapDetector.chordInputs(event.modifierFlags)
+            if self.detector.register(
+                ctrlDown: inputs.ctrlDown, ctrlAlone: inputs.ctrlAlone, at: event.timestamp
+            ) {
+                self.onDoubleTap()
             }
-            let now = event.timestamp
-            if now - lastCtrlDown <= interval {
-                lastCtrlDown = 0
-                onDoubleTap()
-            } else {
-                lastCtrlDown = now
-            }
-        } else if !ctrlNow {
-            ctrlHeld = false
         }
     }
 

@@ -1,8 +1,11 @@
 #!/bin/bash
 # Full FLEURS-hr (914) accuracy+RTF benchmark over the model matrix.
 # Metal path, Mac mini M4. RAM is measured separately (scripts probe whisper-cli
-# directly under /usr/bin/time -l). Run from the repo root.
-cd /Users/akujundzic/Studio/Private/WisperLocal || exit 1
+# directly under /usr/bin/time -l). Run from anywhere; operates on the repo root.
+# set -e: a failed model run must stop the matrix — never print MATRIX DONE
+# over partial numbers (run_bench.py exits 1 when any clip failed).
+set -e
+cd "$(dirname "$0")/.." || exit 1
 PY=benchmark/.venv/bin/python
 MAN=benchmark/data/fleurs-hr-full/manifest.json
 mkdir -p benchmark/results

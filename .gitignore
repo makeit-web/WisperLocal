@@ -74,6 +74,7 @@ secrets.json
 
 # --- Security review with exploit detail (keep local, not for the public repo) ---
 docs/audits/2026-07-07-deep-review-v0.1.5.md
+WisperLocal QA Report 2026-07-08.md
 
 # --- Private working docs (Claude session state; machine/user-specific — repo is shared) ---
 docs/SESSION-HANDOFF.md

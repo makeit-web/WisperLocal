@@ -6,6 +6,8 @@ How to build, test, and release WisperLocal. For install and daily use, see the 
 
 ```bash
 bash scripts/setup-whisper.sh    # build whisper.cpp static libs (once)
+bash scripts/download-model.sh   # fetch + SHA256-verify the whisper model(s) (once;
+                                 # without them the whisper integration test skips)
 swift build && swift test        # WisperCore (whisper bridge) + tests
 bash scripts/make-app.sh         # assemble + sign WisperLocal.app
 open WisperLocal.app

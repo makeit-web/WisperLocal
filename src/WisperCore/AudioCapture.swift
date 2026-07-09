@@ -1,5 +1,13 @@
 import AVFoundation
 
+/// One finished dictation: 16 kHz mono Float32 samples, plus whether the
+/// recording hit the memory cap and lost its tail (surfaced to the user —
+/// a silently shortened transcript would be a hidden wrong result).
+public struct Recording: Sendable {
+    public let samples: [Float]
+    public let truncated: Bool
+}
+
 /// Microphone capture for push-to-talk dictation.
 ///
 /// The input tap runs on a background audio queue (not the real-time render
@@ -13,12 +21,18 @@ public final class AudioCapture: @unchecked Sendable {
     private var native: [Float] = []
     private var sourceRate: Double = 16_000
     private var running = false
+    private var truncated = false
+    /// Memory bound: stop accumulating past this many seconds so a forgotten
+    /// recording can't grow unbounded next to the ~834 MB model on an 8 GB
+    /// machine (~115 MB at 48 kHz for the 600 s default). Injectable for tests.
+    private let maxSeconds: Double
 
-    public init() {}
+    public convenience init() {
+        self.init(maxSeconds: 600)
+    }
 
-    public var isRunning: Bool {
-        lock.lock(); defer { lock.unlock() }
-        return running
+    init(maxSeconds: Double) {
+        self.maxSeconds = maxSeconds
     }
 
     public func start() throws {
@@ -30,7 +44,7 @@ public final class AudioCapture: @unchecked Sendable {
         }
         lock.lock()
         if running { lock.unlock(); throw AudioError.readFailed("already recording") }
-        native.removeAll(keepingCapacity: true); running = true
+        native = []; truncated = false; running = true
         lock.unlock()
 
         let input = engine.inputNode
@@ -55,26 +69,44 @@ public final class AudioCapture: @unchecked Sendable {
     }
 
     /// Stop capture and return the recording as 16 kHz mono Float32.
-    public func stop() throws -> [Float] {
+    public func stop() throws -> Recording {
         engine.stop()
         engine.inputNode.removeTap(onBus: 0)
-        lock.lock()
-        let raw = native
-        let rate = sourceRate
-        running = false
-        lock.unlock()
-        return try AudioFile.resampleMono(raw, sourceRate: rate)
+        return try finishRecording()
     }
 
-    private func accumulate(_ buffer: AVAudioPCMBuffer) {
+    /// Engine-free core of `stop()` (testable with synthetic buffers): takes
+    /// sole ownership of the accumulated samples — releasing the up-to-~115 MB
+    /// buffer instead of holding it while the app idles — and resamples once.
+    func finishRecording() throws -> Recording {
+        lock.lock()
+        let raw = native
+        native = []
+        let rate = sourceRate
+        let wasTruncated = truncated
+        running = false
+        lock.unlock()
+        return Recording(
+            samples: try AudioFile.resampleMono(raw, sourceRate: rate),
+            truncated: wasTruncated
+        )
+    }
+
+    func accumulate(_ buffer: AVAudioPCMBuffer) {
         guard let channel = buffer.floatChannelData else { return }
         let slice = UnsafeBufferPointer(start: channel[0], count: Int(buffer.frameLength))
+        var justTruncated = false
         lock.lock()
-        // Bound memory: stop accumulating past ~10 min so a forgotten recording
-        // can't grow unbounded next to the ~834 MB model on an 8 GB machine.
-        if native.count < Int(sourceRate * 600) {
+        if native.count < Int(sourceRate * maxSeconds) {
             native.append(contentsOf: slice)
+        } else if !truncated {
+            truncated = true
+            justTruncated = true
         }
         lock.unlock()
+        // Log outside the lock (file IO); once per recording, on first drop.
+        if justTruncated {
+            Log.event("recording hit the max-duration cap — discarding further audio")
+        }
     }
 }

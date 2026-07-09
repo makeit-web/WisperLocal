@@ -35,7 +35,7 @@ let package = Package(
             name: "WisperApp",
             dependencies: ["WisperCore"],
             path: "src/WisperApp",
-            exclude: ["Info.plist"],
+            exclude: ["Info.plist", "WisperLocal.entitlements"],
             linkerSettings: whisperLink
         ),
         .testTarget(

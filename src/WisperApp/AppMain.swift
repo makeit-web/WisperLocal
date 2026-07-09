@@ -4,21 +4,46 @@ import Carbon.HIToolbox
 import UserNotifications
 import WisperCore
 
-/// WisperLocal menu-bar app. Global hotkey (⌃⌥D) toggles push-to-talk dictation:
-/// record → transcribe → deliver. Phase 3 delivers to the clipboard; Phase 4
-/// replaces that with Accessibility injection into the focused app.
+/// WisperLocal menu-bar app. Global hotkey (double-tap Ctrl, or ⌃⌥D) toggles
+/// push-to-talk dictation: record → transcribe → inject into the focused app
+/// via Accessibility. The transcript never touches the clipboard (ADR 007).
 @main
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
+    /// The single dictation state — the icon is derived from it in one place
+    /// (`didSet`), never set ad hoc. A bool + icon-as-state let the mic stay
+    /// hot behind an idle 🎤 (QA 2026-07-08, HIGH); this enum is the fix.
+    private enum DictationState: Equatable {
+        case loading        // model load in flight
+        case idle           // ready to dictate
+        case recording      // mic hot
+        case transcribing   // whisper running; toggles are ignored
+        case notice(String) // idle-equivalent, showing a persistent glyph (🚫 ⚠️ 🔒 🔐)
+
+        var icon: String {
+            switch self {
+            case .loading, .transcribing: return "⏳"
+            case .idle: return "🎤"
+            case .recording: return "🔴"
+            case .notice(let glyph): return glyph
+            }
+        }
+    }
+
     private var statusItem: NSStatusItem?
+    private var titleMenuItem: NSMenuItem?
     private var loginMenuItem: NSMenuItem?
     private var hotKey: HotKey?
     private var doubleTap: DoubleTapCtrl?
     private let splash = SplashWindow()
     private let capture = AudioCapture()
     private var context: WhisperContext?
-    private var isRecording = false
     private var language = "hr"  // default Croatian (best accuracy); switch via the menu
+    private static let menuTitle = "WisperLocal — double-tap Ctrl (or ⌃⌥D)"
+
+    private var state: DictationState = .loading {
+        didSet { statusItem?.button?.title = state.icon }
+    }
 
     static func main() {
         let app = NSApplication.shared
@@ -38,7 +63,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         AVCaptureDevice.requestAccess(for: .audio) { [weak self] granted in
             Task { @MainActor in
                 guard let self else { return }
-                if !granted { self.setIcon("🚫") }
+                if !granted { self.state = .notice("🚫") }
                 self.installHotKey()
             }
         }
@@ -46,10 +71,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func setupStatusItem() {
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        item.button?.title = "🎤"
+        item.button?.title = state.icon
         let menu = NSMenu()
-        menu.delegate = self  // refresh the Launch-at-Login checkmark on open
-        menu.addItem(withTitle: "WisperLocal — double-tap Ctrl (or ⌃⌥D)", action: nil, keyEquivalent: "")
+        menu.delegate = self  // refresh the checkmark + Accessibility hint on open
+        let title = NSMenuItem(title: Self.menuTitle, action: nil, keyEquivalent: "")
+        menu.addItem(title)
+        titleMenuItem = title
         menu.addItem(.separator())
 
         let languageItem = NSMenuItem(title: "Language", action: nil, keyEquivalent: "")
@@ -85,13 +112,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         statusItem = item
     }
 
+    /// Load the whisper model off the main actor — it is a multi-second read of
+    /// an 834 MB–1.7 GB file, and doing it synchronously froze the splash and
+    /// menu for exactly the window the splash exists to cover (QA 2026-07-08).
     private func loadModel() {
-        do {
-            context = try WhisperContext(modelPath: ModelStore.defaultModelPath())
-            Log.event("model loaded")
-        } catch {
-            setIcon("⚠️")
-            Log.error("model load failed", error)
+        Task.detached(priority: .userInitiated) { [weak self] in
+            let result = Result { try WhisperContext(modelPath: ModelStore.defaultModelPath()) }
+            await MainActor.run {
+                guard let self else { return }
+                switch result {
+                case .success(let ctx):
+                    self.context = ctx
+                    Log.event("model loaded")
+                    // Only leave .loading if nothing (e.g. mic denial) got there first.
+                    if self.state == .loading { self.state = .idle }
+                case .failure(let error):
+                    Log.error("model load failed", error)
+                    if self.state == .loading { self.state = .notice("⚠️") }
+                }
+            }
         }
     }
 
@@ -106,78 +145,99 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         ) { [weak self] in
             Task { @MainActor in self?.toggle() }
         }
+        if hotKey?.isRegistered == false {
+            // Both triggers dead would look like a dead app — say so visibly.
+            // Don't promise the double-tap works: it needs Accessibility too.
+            notify(
+                "Hotkey unavailable",
+                TextInjector.isTrusted()
+                    ? "⌃⌥D is taken by another app. Double-tap Ctrl still works."
+                    : "⌃⌥D is taken by another app — grant Accessibility so double-tap Ctrl can work."
+            )
+        }
     }
 
     private func toggle() {
-        isRecording ? stopAndTranscribe() : startRecording()
+        switch state {
+        case .idle, .notice:
+            startRecording()
+        case .recording:
+            stopAndTranscribe()
+        case .transcribing:
+            break  // ignore toggles until the pipeline finishes — no second hot mic
+        case .loading:
+            notify("Model still loading", "One moment — dictation starts once the model is ready.")
+        }
     }
 
     private func startRecording() {
         do {
             try capture.start()
-            isRecording = true
-            setIcon("🔴")
+            state = .recording
         } catch {
-            setIcon("🚫")
+            state = .notice("🚫")
             Log.error("capture start failed", error)
         }
     }
 
     private func stopAndTranscribe() {
-        isRecording = false
-        setIcon("⏳")
+        state = .transcribing  // gates toggle() until every path below resolves
         let ctx = context
         let lang = language
         let cap = capture
         Task { @MainActor in
             do {
                 // Resample off the main actor so long recordings don't stall the UI.
-                let samples = try await Task.detached(priority: .userInitiated) {
+                let recording = try await Task.detached(priority: .userInitiated) {
                     try cap.stop()
                 }.value
+                if recording.truncated {
+                    notify(
+                        "Recording cut at 10 minutes",
+                        "Dictation stopped accumulating at the cap — the tail was not recorded."
+                    )
+                }
                 // Ignore accidental near-empty recordings (< ~0.5 s) instead of a scary ⚠️.
-                guard samples.count >= 8_000 else { self.setIcon("🎤"); return }
-                guard let ctx else { self.setIcon("⚠️"); Log.error("no model loaded"); return }
-                let text = try await ctx.transcribe(samples: samples, language: lang)
+                guard recording.samples.count >= 8_000 else { self.state = .idle; return }
+                guard let ctx else { self.state = .notice("⚠️"); Log.error("no model loaded"); return }
+                let text = try await ctx.transcribe(samples: recording.samples, language: lang)
                 self.deliver(text)
             } catch {
-                self.setIcon("⚠️")
+                self.state = .notice("⚠️")
                 Log.error("transcription failed", error)
             }
         }
     }
 
-    /// Type the transcription into the focused app, off the main thread (chunked
-    /// injection takes a few ms). Nothing is auto-copied to the clipboard — the
-    /// transcript never leaves the machine implicitly (ADR 007); if injection is
-    /// blocked the user copies it explicitly via the menu.
+    /// Type the transcription into the focused app (TextInjector runs the
+    /// chunked posting on its own serial queue, off the main thread). Nothing
+    /// is ever copied to the clipboard — the transcript never leaves the
+    /// machine (ADR 007); if injection is blocked the dictation is NOT
+    /// delivered (🔐/🔒 icon + notification) and the user re-dictates after
+    /// granting Accessibility.
     private func deliver(_ rawText: String) {
         // Strip Whisper's trailing period/ellipsis before typing (ADR 006) so
         // dictated URLs/paths aren't broken. Faithful transcript stays in WisperCore.
         let text = TextCleanup.forInjection(rawText)
-        guard !text.isEmpty else { setIcon("🎤"); return }
-        Task.detached(priority: .userInitiated) { [weak self] in
-            let result = TextInjector.inject(text)
-            await MainActor.run { self?.handleInjection(result) }
+        guard !text.isEmpty else { state = .idle; return }
+        Task { [weak self] in
+            let result = await TextInjector.inject(text)
+            self?.handleInjection(result)
         }
     }
 
     private func handleInjection(_ result: InjectionResult) {
         switch result {
         case .injected:
-            setIcon("🎤")
+            state = .idle
         case .secureField:
-            setIcon("🔒")  // refused to type into a password field
+            state = .notice("🔒")  // refused to type into a password field
             notify("Password field", "Not typing into a secure field, for your safety.")
         case .notTrusted:
-            setIcon("🔐")
+            state = .notice("🔐")
             notify("Accessibility needed", "Enable WisperLocal in Accessibility, then dictate again.")
             _ = TextInjector.requestTrustPrompt()
         }
-    }
-
-    private func setIcon(_ symbol: String) {
-        statusItem?.button?.title = symbol
     }
 
     @objc private func setLanguage(_ sender: NSMenuItem) {
@@ -214,9 +274,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     // NSMenuDelegate: keep the Launch-at-Login checkmark in sync if the user
-    // changed it from System Settings while the app was running.
+    // changed it from System Settings while the app was running, and flag the
+    // double-tap trigger as inactive while Accessibility is not granted (the
+    // global flags monitor silently never fires without it).
     func menuNeedsUpdate(_ menu: NSMenu) {
         loginMenuItem?.state = LoginItem.isEnabled ? .on : .off
+        titleMenuItem?.title = TextInjector.isTrusted()
+            ? Self.menuTitle
+            : Self.menuTitle + "  — grant Accessibility first"
     }
 
     @objc private func quit() {

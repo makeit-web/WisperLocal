@@ -6,19 +6,40 @@
 #
 # Benchmark (FLEURS-hr, 100 samples, M4): fine-tune WER 8.5% (median 7.1%) vs
 # stock turbo q8_0 WER 11.7% — same 834 MB size + same speed. Retains English.
+#
+# Provenance / supply-chain (QA 2026-07-08): every remote input is pinned to a
+# commit, only safetensors weights are fetched (never a pickle .bin — torch
+# pickle deserialization is code execution, and this runs on the machine that
+# signs releases), and all work happens in fresh mktemp dirs, never reusable
+# fixed /tmp paths. pip deps stay unpinned by accepted trade-off: one-time dev
+# script whose output is checksummed for end users (see decision log 008).
 set -e
 cd "$(dirname "$0")/.." || exit 1
 [ -d whisper.cpp ] || bash scripts/setup-whisper.sh
 
-VENV=/tmp/wl-convert-venv
+# Pinned 2026-07-08 (current HEADs at conversion time).
+HF_REVISION="3247238374e3d81f55b1451a105294b306e093bd"       # GoranS/whisper-large-v3-turbo-hr-parla
+OPENAI_WHISPER_COMMIT="04f449b8a437f1bbd3dba5c9f826aca972e7709a"  # openai/whisper (mel filters/tokenizer assets)
+
+WORK="$(mktemp -d)"; trap 'rm -rf "$WORK"' EXIT
+VENV="$WORK/venv"; HF="$WORK/hr-ft"; OUT="$WORK/out"; OAIW="$WORK/openai-whisper"
+
 python3.11 -m venv "$VENV"
 "$VENV/bin/pip" install -q torch transformers numpy huggingface_hub
+"$VENV/bin/python" -c "
+from huggingface_hub import snapshot_download
+snapshot_download(
+    'GoranS/whisper-large-v3-turbo-hr-parla',
+    revision='$HF_REVISION',
+    local_dir='$HF',
+    allow_patterns=['model.safetensors', '*.json', '*.txt'],  # no pickle, ever
+)"
 
-HF=/tmp/hr-ft; OUT=/tmp/hr-ft-out
-"$VENV/bin/python" -c "from huggingface_hub import snapshot_download; snapshot_download('GoranS/whisper-large-v3-turbo-hr-parla', local_dir='$HF', ignore_patterns=['runs/*','training_args.bin'])"
-[ -d /tmp/openai-whisper ] || git clone --depth 1 https://github.com/openai/whisper /tmp/openai-whisper
+git clone https://github.com/openai/whisper "$OAIW"
+git -C "$OAIW" checkout --detach "$OPENAI_WHISPER_COMMIT"
+
 mkdir -p "$OUT"
-"$VENV/bin/python" whisper.cpp/models/convert-h5-to-ggml.py "$HF" /tmp/openai-whisper "$OUT"
+"$VENV/bin/python" whisper.cpp/models/convert-h5-to-ggml.py "$HF" "$OAIW" "$OUT"
 
 if [ ! -x whisper.cpp/build/bin/whisper-quantize ]; then
   cmake -S whisper.cpp -B whisper.cpp/build -DCMAKE_BUILD_TYPE=Release >/dev/null

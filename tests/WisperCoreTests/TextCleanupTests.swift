@@ -57,4 +57,38 @@ struct TextCleanupTests {
     @Test func handlesOnlyPeriod() {
         #expect(TextCleanup.forInjection(".") == "")
     }
+
+    // Control characters are filtered at the injection choke point: a newline
+    // typed into a terminal is Return (executes the pending line), ESC can
+    // trigger editor commands. Whisper output is untrusted model output.
+
+    @Test func replacesInteriorNewlineWithSpace() {
+        #expect(TextCleanup.forInjection("prvi red\ndrugi red.") == "prvi red drugi red")
+    }
+
+    @Test func replacesCRLFRunWithSingleSpace() {
+        #expect(TextCleanup.forInjection("prvi\r\ndrugi") == "prvi drugi")
+    }
+
+    @Test func replacesTabWithSpace() {
+        #expect(TextCleanup.forInjection("lijevo\tdesno") == "lijevo desno")
+    }
+
+    @Test func dropsNonWhitespaceControlCharacters() {
+        #expect(TextCleanup.forInjection("zvuk\u{07}dalje") == "zvukdalje")
+        #expect(TextCleanup.forInjection("esc\u{1B}dalje") == "escdalje")
+        #expect(TextCleanup.forInjection("del\u{7F}dalje") == "deldalje")
+    }
+
+    @Test func mixedControlRunWithNewlineBecomesOneSpace() {
+        #expect(TextCleanup.forInjection("a\u{07}\n\u{1B}b") == "a b")
+    }
+
+    @Test func replacesUnicodeLineSeparatorsWithSpace() {
+        #expect(TextCleanup.forInjection("a\u{2028}b\u{2029}c") == "a b c")
+    }
+
+    @Test func trailingNewlineIsTrimmedNotSpaced() {
+        #expect(TextCleanup.forInjection("kraj.\n") == "kraj")
+    }
 }
