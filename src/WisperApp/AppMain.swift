@@ -232,9 +232,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             state = .idle
         case .secureField:
             state = .notice("🔒")  // refused to type into a password field
+            Log.event("injection refused — focused field is a password field")
             notify("Password field", "Not typing into a secure field, for your safety.")
+        case .secureInputLocked(let likelyApp):
+            // Not a password field: keyboard input is locked session-wide, so
+            // nothing can be typed into any app until the lock is released.
+            //
+            // The body says "locked while X was in front" rather than "X is
+            // blocking you", because that is literally what the OS reports —
+            // the app frontmost when the lock was engaged, not the requester
+            // (ADR 009). Usually the same app; when it isn't, this phrasing is
+            // still true and the suggested action (close a password prompt)
+            // stays non-destructive, so a user is never told to quit an
+            // innocent app they may be dictating into.
+            state = .notice("🔒")
+            if let likelyApp {
+                Log.event("injection refused — secure input locked, frontmost was", app: likelyApp)
+                notify(
+                    "Keyboard input locked",
+                    "Locked while \(likelyApp.name) was in front — close its password prompt, then dictate again."
+                )
+            } else {
+                Log.event("injection refused — secure input locked by an unidentified process")
+                notify(
+                    "Keyboard input locked",
+                    "Another app locked keyboard input. Close any password prompt, then dictate again."
+                )
+            }
         case .notTrusted:
             state = .notice("🔐")
+            Log.event("injection refused — accessibility permission not granted")
             notify("Accessibility needed", "Enable WisperLocal in Accessibility, then dictate again.")
             _ = TextInjector.requestTrustPrompt()
         }

@@ -6,7 +6,17 @@ import Foundation
 public enum InjectionResult: Equatable, Sendable {
     case injected
     case notTrusted
+    /// The focused field is a password field.
     case secureField
+    /// Something holds the session-wide secure input lock, so no app can
+    /// receive synthesized keys. Distinct from `secureField`: nothing about the
+    /// *user's* current field is secret — the block is system-wide.
+    ///
+    /// `likelyApp` is a lead, never a certainty: the OS reports whichever app
+    /// was frontmost when the lock was engaged, not the process that requested
+    /// it (see `SecureInput`, ADR 009). Named so no call site can present it as
+    /// fact by accident.
+    case secureInputLocked(likelyApp: RunningApp?)
 }
 
 /// OS-level probes and the event sink for `TextInjector.inject`, injectable so
@@ -16,6 +26,9 @@ struct InjectionProbes {
     var isTrusted: () -> Bool
     var secureInputActive: () -> Bool
     var focusedFieldIsSecure: () -> Bool
+    /// Best guess at who holds the secure input lock. Consulted only when
+    /// already refusing — it is two IPC round trips.
+    var secureInputHolder: () -> RunningApp?
     var postChunk: ([UInt16]) -> Void
     var pace: () -> Void
 
@@ -27,6 +40,7 @@ struct InjectionProbes {
             isTrusted: { AXIsProcessTrusted() },
             secureInputActive: { IsSecureEventInputEnabled() },
             focusedFieldIsSecure: { TextInjector.axFocusedFieldIsSecure() },
+            secureInputHolder: { SecureInput.likelyHolder() },
             postChunk: { TextInjector.postUnicode($0, source: source) },
             pace: { usleep(1200) }  // ~1.2 ms lets the target app's input queue drain
         )
@@ -35,8 +49,9 @@ struct InjectionProbes {
 
 /// Types text into the frontmost app via synthesized Unicode keyboard events.
 /// Unicode posting handles Croatian diacritics (č/ć/š/ž/đ) directly. Requires
-/// Accessibility permission; refuses when secure input is active (password
-/// fields), never touching the pasteboard.
+/// Accessibility permission; refuses both when the focused field is a password
+/// field and when secure input is locked session-wide (ADR 009), never touching
+/// the pasteboard.
 public enum TextInjector {
     /// Max UTF-16 units per synthesized keyboard event. A single event carrying a
     /// very long string truncates/garbles in some apps (the real cause of "types
@@ -81,11 +96,14 @@ public enum TextInjector {
     static func inject(_ text: String, probes: InjectionProbes) -> InjectionResult {
         guard !text.isEmpty else { return .injected }
         guard probes.isTrusted() else { return .notTrusted }
-        if probes.secureInputActive() || probes.focusedFieldIsSecure() { return .secureField }
+        if probes.secureInputActive() { return .secureInputLocked(likelyApp: probes.secureInputHolder()) }
+        if probes.focusedFieldIsSecure() { return .secureField }
 
         let units = Array(text.utf16)
         for range in chunkRanges(of: units, max: chunkSize) {
-            if probes.secureInputActive() { return .secureField }
+            if probes.secureInputActive() {
+                return .secureInputLocked(likelyApp: probes.secureInputHolder())
+            }
             probes.postChunk(Array(units[range]))
             probes.pace()
         }

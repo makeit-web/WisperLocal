@@ -57,6 +57,8 @@ struct TextInjectorTests {
     private final class Recorder {
         var chunks: [[UInt16]] = []
         var secureNow = false
+        var holder: RunningApp? = RunningApp(name: "Microsoft Word")
+        var holderLookups = 0
     }
 
     private func probes(
@@ -68,6 +70,10 @@ struct TextInjectorTests {
             isTrusted: { trusted },
             secureInputActive: { recorder.secureNow },
             focusedFieldIsSecure: { false },
+            secureInputHolder: {
+                recorder.holderLookups += 1
+                return recorder.holder
+            },
             postChunk: { units in
                 recorder.chunks.append(units)
                 if secureOnPost { recorder.secureNow = true }
@@ -90,21 +96,48 @@ struct TextInjectorTests {
         #expect(recorder.chunks.isEmpty)
     }
 
-    @Test func secureInputActiveRefusesBeforeAnyEvent() {
+    @Test func secureInputLockReportsTheLikelyApp() {
+        // A session-wide lock is NOT a password field, and must not be reported
+        // as one (the 2026-07-22 Microsoft Word incident: every dictation was
+        // refused as "password field" while nothing could be typed anywhere).
+        // The likely holder rides along so the user has a lead to act on.
         let recorder = Recorder()
         recorder.secureNow = true
         let result = TextInjector.inject("tajna", probes: probes(recorder: recorder))
-        #expect(result == .secureField)
+        #expect(result == .secureInputLocked(likelyApp: RunningApp(name: "Microsoft Word")))
+        #expect(recorder.chunks.isEmpty)
+    }
+
+    @Test func secureInputLockWithUnidentifiedHolderStillRefuses() {
+        // Holder unresolvable (dead pid, or a background process we refuse to
+        // name): still fail closed, just without an app name to show.
+        let recorder = Recorder()
+        recorder.secureNow = true
+        recorder.holder = nil
+        let result = TextInjector.inject("tajna", probes: probes(recorder: recorder))
+        #expect(result == .secureInputLocked(likelyApp: nil))
         #expect(recorder.chunks.isEmpty)
     }
 
     @Test func secureSubroleRefusesBeforeAnyEvent() {
+        // The focused field really is a password field — distinct from a global
+        // lock, and no holder lookup is warranted.
         let recorder = Recorder()
         var fake = probes(recorder: recorder)
         fake.focusedFieldIsSecure = { true }
         let result = TextInjector.inject("tajna", probes: fake)
         #expect(result == .secureField)
         #expect(recorder.chunks.isEmpty)
+        #expect(recorder.holderLookups == 0)
+    }
+
+    @Test func holderIsNotLookedUpOnTheHappyPath() {
+        // Resolving the holder is an IORegistry round trip; it must stay off the
+        // hot path and run only when we are already refusing.
+        let recorder = Recorder()
+        let result = TextInjector.inject("kava", probes: probes(recorder: recorder))
+        #expect(result == .injected)
+        #expect(recorder.holderLookups == 0)
     }
 
     @Test func trustIsCheckedBeforeSecureInput() {
@@ -134,7 +167,7 @@ struct TextInjectorTests {
         let result = TextInjector.inject(
             text, probes: probes(recorder: recorder, secureOnPost: true)
         )
-        #expect(result == .secureField)
+        #expect(result == .secureInputLocked(likelyApp: RunningApp(name: "Microsoft Word")))
         #expect(recorder.chunks.count == 1)
     }
 }

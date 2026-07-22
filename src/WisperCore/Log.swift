@@ -20,6 +20,13 @@ public enum Log {
 
     public static func event(_ message: StaticString) { write("INFO", "\(message)") }
 
+    /// The one runtime-`String` value this logger accepts — and `RunningApp` is
+    /// constructible only from a live pid, never from arbitrary text, so the
+    /// "a transcript cannot be logged by mistake" guarantee above still holds.
+    public static func event(_ message: StaticString, app: RunningApp) {
+        write("INFO", "\(message) — \(app.name)")
+    }
+
     public static func error(_ message: StaticString, _ error: Error? = nil) {
         write("ERROR", error.map { "\(message) — \($0)" } ?? "\(message)")
     }
