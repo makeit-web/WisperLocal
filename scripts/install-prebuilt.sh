@@ -8,9 +8,9 @@ REPO="makeit-web/WisperLocal"
 # Pinned app release + its SHA256. Bump BOTH every release (see docs/DEVELOPMENT.md).
 # Pinning + a committed checksum is the integrity boundary: a swapped release
 # asset would fail verification instead of silently running on a colleague's Mac.
-APP_VERSION="v0.1.7"
+APP_VERSION="v0.1.8"
 APP_ZIP="https://github.com/$REPO/releases/download/$APP_VERSION/WisperLocal.app.zip"
-APP_SHA256="a67cf014f00ec94bed6c8e805e32c08fe1d331c83e357ccd350bd8ed56b86d15"
+APP_SHA256="b325c731d1d0861deadcbc246a1a894b990d8a9ac256531d398edc4d26e37e83"
 
 # Croatian fine-tune model (lives on the v0.1.1 release) + its SHA256.
 MODEL_NAME="ggml-hr-parla-q8_0.bin"
